@@ -29,18 +29,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ---------------- CHECKOUT ----------------
+      # ---------- CHECKOUT ----------
       - name: Checkout CI repo
         uses: actions/checkout@v4
 
-      # ---------------- CACHE ----------------
+      # ---------- CACHE ----------
       - name: Cache clang
         uses: actions/cache@v4
         with:
           path: clang
           key: clang-${{ runner.os }}
 
-      # ---------------- DEPS ----------------
+      # ---------- DEPENDENCIES ----------
       - name: Install dependencies
         run: |
           sudo apt update
@@ -51,13 +51,13 @@ jobs:
             gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
             gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
 
-      # ---------------- CLANG ----------------
+      # ---------- CLANG ----------
       - name: Setup clang
         run: |
           chmod +x Common/clang.sh
           bash Common/clang.sh
 
-      # ---------------- KERNEL ----------------
+      # ---------- KERNEL ----------
       - name: Clone kernel
         run: |
           git clone --depth=1 \
@@ -81,7 +81,7 @@ jobs:
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             2>&1 | tee ../build.log
 
-      # ---------------- BOOT IMG ----------------
+      # ---------- BOOT.IMG ----------
       - name: Build boot.img
         if: success()
         run: |
@@ -90,7 +90,7 @@ jobs:
           cd AnyKernel
           ./mkbootimg.sh || true
 
-      # ---------------- ARTIFACTS ----------------
+      # ---------- ARTIFACTS ----------
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -112,7 +112,7 @@ jobs:
           name: boot-img
           path: AnyKernel/*.img
 
-      # ---------------- TELEGRAM ----------------
+      # ---------- TELEGRAM ----------
       - name: Telegram notify
         if: always()
         run: |
@@ -122,11 +122,14 @@ jobs:
             STATUS="❌ BUILD FAILED"
           fi
 
-          TEXT="Android Kernel CI
+          MSG=$(cat <<EOF
+Android Kernel CI
 Device: ${{ inputs.devicename }}
 Status: $STATUS
-Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+EOF
+          )
 
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TG_CHAT_ID }}" \
-            -d text="$TEXT"
+            -d text="$MSG"
