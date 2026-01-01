@@ -11,7 +11,7 @@ jobs:
         run: |
           export TERM=xterm
           
-          wget https://raw.githubusercontent.com/KanariaAlt/Android-CI/main/Common/Dependency.sh
+          wget https://raw.githubusercontent.com/evrahimkhan/Android-CI-builder/main/Common/Dependency.sh
           bash Dependency.sh
 
       - name: tmate ssh link 
