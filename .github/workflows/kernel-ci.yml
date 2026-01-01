@@ -6,77 +6,116 @@ on:
       devicename:
         description: "Device codename"
         required: true
+
       defconfig:
         description: "Kernel defconfig"
         required: true
+
       kernel_repo:
         description: "Kernel source repo"
         required: true
+
       kernel_branch:
         description: "Kernel branch"
         required: true
         default: "main"
+
       anykernel_repo:
         description: "AnyKernel3 repo"
         required: true
+
+      kernelsu:
+        description: "Enable KernelSU-Next (true/false)"
+        required: true
+        default: "false"
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      # ---------------- CHECKOUT ----------------
+      - name: Checkout CI repo
+        uses: actions/checkout@v4
 
+      # ---------------- CACHE ----------------
       - name: Cache clang
         uses: actions/cache@v4
         with:
           path: clang
           key: clang-${{ runner.os }}
 
-      - name: Install deps
+      # ---------------- DEPENDENCIES ----------------
+      - name: Install build dependencies
         run: |
           sudo apt update
           sudo apt install -y \
             bc bison build-essential flex git gperf \
             libncurses-dev libssl-dev libelf-dev lzop \
-            python3 unzip zip wget \
+            python3 unzip zip wget curl \
             gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi \
+            gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
 
+      # ---------------- CLANG ----------------
       - name: Setup clang
         run: |
           chmod +x Common/clang.sh
           bash Common/clang.sh
 
-      - name: Clone kernel
+      # ---------------- KERNEL ----------------
+      - name: Clone kernel source
         run: |
           git clone --depth=1 \
             -b ${{ inputs.kernel_branch }} \
             ${{ inputs.kernel_repo }} kernel
 
+      # ---------------- KERNELSU NEXT ----------------
+      - name: Integrate KernelSU-Next
+        if: ${{ inputs.kernelsu == 'true' }}
+        run: |
+          cd kernel
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+
+      # ---------------- BUILD ----------------
       - name: Build kernel
         run: |
           set -o pipefail
+
           export ARCH=arm64
           export SUBARCH=arm64
           export PATH=$PWD/clang/bin:$PATH
           export LD=aarch64-linux-gnu-ld
+          export LD32=arm-linux-gnueabihf-ld
 
           cd kernel
           make O=out ${{ inputs.defconfig }}
+
           make -j$(nproc) O=out \
             CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             2>&1 | tee ../build.log
 
-      - name: Build boot.img
+      # ---------------- ANYKERNEL ZIP ----------------
+      - name: Build flashable ZIP
         if: success()
         run: |
           git clone --depth=1 ${{ inputs.anykernel_repo }} AnyKernel
           cp kernel/out/arch/arm64/boot/Image AnyKernel/
+
+          ZIPNAME="${{ inputs.devicename }}-kernel-${GITHUB_RUN_NUMBER}.zip"
           cd AnyKernel
-          ./mkbootimg.sh || true
+          zip -r "../$ZIPNAME" ./*
+          echo "ZIPNAME=$ZIPNAME" >> $GITHUB_ENV
+
+      # ---------------- ARTIFACTS ----------------
+      - name: Upload flashable ZIP
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-zip
+          path: "*.zip"
 
       - name: Upload build log
         if: always()
@@ -92,20 +131,27 @@ jobs:
           name: error-log
           path: build.log
 
-      - name: Telegram notify
+      # ---------------- TELEGRAM ----------------
+      - name: Telegram notification
         if: always()
         run: |
           if [ "${{ job.status }}" = "success" ]; then
-            STATUS="SUCCESS"
+            STATUS="✅ BUILD SUCCESS"
           else
-            STATUS="FAILED"
+            STATUS="❌ BUILD FAILED"
           fi
 
-          MSG=$(printf "Android Kernel CI\nDevice: %s\nStatus: %s\nRun: %s" \
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+          TEXT=$(printf "Android Kernel CI\nDevice: %s\nKernelSU-Next: %s\nStatus: %s" \
             "${{ inputs.devicename }}" \
-            "$STATUS" \
-            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")
+            "${{ inputs.kernelsu }}" \
+            "$STATUS")
+
+          BUTTONS=$(printf '{"inline_keyboard":[[{"text":"⬇ Download ZIP","url":"%s"},{"text":"🔁 Workflow","url":"%s"}]]}' \
+            "$RUN_URL" "$RUN_URL")
 
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TG_CHAT_ID }}" \
-            -d text="$MSG"
+            -d text="$TEXT" \
+            -d reply_markup="$BUTTONS"
