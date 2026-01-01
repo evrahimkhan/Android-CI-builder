@@ -62,7 +62,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Post Update
         run: |
-          wget https://raw.githubusercontent.com/KanariaAlt/Android-CI/main/Common/post.sh
+          wget https://raw.githubusercontent.com/evrahimkhan/Android-CI-builder/main/Common/post.sh
           bash post.sh
 
         env:
