@@ -1,4 +1,4 @@
-name: Universal Android Kernel CI
+name: Universal Kernel CI
 
 on:
   workflow_dispatch:
@@ -6,93 +6,156 @@ on:
       codename:
         description: "Device codename"
         required: true
-        default: "stone"
       defconfig:
         description: "Kernel defconfig"
         required: true
-        default: "stone_defconfig"
       kernel_repo:
-        description: "Kernel source repo"
+        description: "Kernel source git URL"
         required: true
-        default: "https://github.com/USERNAME/KERNEL"
       kernel_branch:
         description: "Kernel branch"
         required: true
-        default: "main"
 
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout (dummy)
-        uses: actions/checkout@v4
+    - name: Checkout CI repo
+      uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y \
-            bc bison flex build-essential \
-            libssl-dev libelf-dev \
-            clang lld llvm \
-            ccache git curl python3
+    - name: Clone kernel source
+      run: |
+        git clone --depth=1 -b "${{ github.event.inputs.kernel_branch }}" \
+          "${{ github.event.inputs.kernel_repo }}" kernel
 
-      - name: Setup ccache
-        run: |
-          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
-          echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
-          echo "CCACHE_MAXSIZE=10G" >> $GITHUB_ENV
+    - name: Setup dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          bc bison build-essential ccache curl flex git \
+          libssl-dev libelf-dev lld llvm \
+          python3 unzip zip
 
-      - name: Clone kernel source
-        run: |
-          git clone --depth=1 \
-            -b "${{ github.event.inputs.kernel_branch }}" \
-            "${{ github.event.inputs.kernel_repo }}" kernel
+    - name: Setup Proton Clang
+      run: |
+        git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+        echo "$PWD/clang/bin" >> $GITHUB_PATH
 
-      - name: Clone Proton Clang
-        run: |
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+    - name: Enable ccache
+      run: |
+        echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+        echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
+        echo "CCACHE_MAXSIZE=10G" >> $GITHUB_ENV
 
-      - name: Build kernel
-        run: |
-          set -e
-          export PATH="$PWD/clang/bin:$PATH"
-          export ARCH=arm64
-          export CC=clang
-          export LLVM=1
-          export LLVM_IAS=1
-          export USE_CCACHE=1
+    - name: Telegram notify (START)
+      run: |
+        curl -s -X POST https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage \
+          -d chat_id=${{ secrets.TG_CHAT_ID }} \
+          -d parse_mode=Markdown \
+          -d text="🚀 *Kernel CI Started*%0A📱 Device: ${{ github.event.inputs.codename }}"
 
-          cd kernel
-          mkdir -p out
-          make O=out ${{ github.event.inputs.defconfig }}
+    - name: Build kernel
+      id: build
+      run: |
+        set -o pipefail
+        export ARCH=arm64
+        export CC=clang
+        export LLVM=1
+        export LLVM_IAS=1
 
-          # Disable vdso32 if enabled (arm64 CI fix)
-          if grep -q CONFIG_COMPAT_VDSO=y out/.config; then
-            scripts/config --file out/.config \
-              -d CONFIG_COMPAT_VDSO \
-              -d CONFIG_VDSO32
-            make O=out olddefconfig
-          fi
+        cd kernel
+        mkdir -p out
+        make O=out "${{ github.event.inputs.defconfig }}"
 
-          make -j$(nproc) O=out
+        # vdso32 auto-fix
+        if grep -q CONFIG_COMPAT_VDSO=y out/.config; then
+          echo "Disabling vdso32"
+          scripts/config --file out/.config \
+            -d CONFIG_COMPAT_VDSO -d CONFIG_VDSO32
+          make O=out olddefconfig
+        fi
 
-      - name: Detect kernel type (GKI / NON-GKI)
-        id: gki
-        run: |
-          if [ -f kernel/out/arch/arm64/boot/Image.gz ]; then
-            echo "type=GKI" >> $GITHUB_OUTPUT
-          else
-            echo "type=NON-GKI" >> $GITHUB_OUTPUT
-          fi
+        make -j$(nproc) O=out 2>&1 | tee build.log
 
-      - name: Collect artifacts
-        run: |
-          mkdir -p artifacts
-          cp kernel/out/arch/arm64/boot/Image artifacts/Image
+    - name: Detect GKI / Kernel info
+      id: info
+      run: |
+        if grep -q "GKI" kernel/out/.config; then
+          echo "type=GKI" >> $GITHUB_OUTPUT
+        else
+          echo "type=NON-GKI" >> $GITHUB_OUTPUT
+        fi
 
-      - name: Upload Image
-        uses: actions/upload-artifact@v4
-        with:
-          name: Kernel-Image
-          path: artifacts/Image
+        strings kernel/out/vmlinux | grep "Linux version" | head -n1 > kernel_version.txt
+        clang --version | head -n1 > clang_version.txt
+
+    - name: Build boot.img (auto v3/v4)
+      run: |
+        git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
+        IMG=kernel/out/arch/arm64/boot/Image
+
+        if grep -q "header_version 4" kernel/out/.config; then
+          HV=4
+        else
+          HV=3
+        fi
+
+        python3 tools/mkbootimg/mkbootimg.py \
+          --kernel "$IMG" \
+          --header_version $HV \
+          -o boot.img
+
+    - name: Build AnyKernel3 ZIP
+      run: |
+        cp kernel/out/arch/arm64/boot/Image AnyKernel3/
+        cd AnyKernel3
+        zip -r9 ../AnyKernel3-${{ github.event.inputs.codename }}.zip *
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: kernel-build
+        path: |
+          kernel/build.log
+          boot.img
+          AnyKernel3-${{ github.event.inputs.codename }}.zip
+
+    - name: GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: "${{ github.run_number }}"
+        files: |
+          boot.img
+          AnyKernel3-${{ github.event.inputs.codename }}.zip
+
+    - name: Telegram notify (SUCCESS)
+      if: success()
+      run: |
+        KVER=$(cat kernel_version.txt)
+        CLANG=$(cat clang_version.txt)
+
+        curl -s -X POST https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage \
+          -d chat_id=${{ secrets.TG_CHAT_ID }} \
+          -d parse_mode=Markdown \
+          -d text="✅ *Build Success*%0A\
+📱 ${{ github.event.inputs.codename }}%0A\
+🧠 ${{ steps.info.outputs.type }}%0A\
+🐧 ${KVER}%0A\
+🛠 ${CLANG}"
+
+        for f in boot.img AnyKernel3-${{ github.event.inputs.codename }}.zip kernel/build.log; do
+          curl -F document=@$f \
+            https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument \
+            -F chat_id=${{ secrets.TG_CHAT_ID }}
+        done
+
+    - name: Telegram notify (FAILED)
+      if: failure()
+      run: |
+        curl -s -X POST https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage \
+          -d chat_id=${{ secrets.TG_CHAT_ID }} \
+          -d parse_mode=Markdown \
+          -d text="❌ *Kernel Build Failed*%0A\
+📱 ${{ github.event.inputs.codename }}%0A\
+🔗 https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
