@@ -7,7 +7,7 @@ on:
         description: "Device codename (e.g. stone)"
         required: true
       defconfig:
-        description: "Kernel defconfig"
+        description: "Kernel defconfig (e.g. stone_defconfig)"
         required: true
       kernel_repo:
         description: "Kernel source git URL"
@@ -28,7 +28,8 @@ jobs:
       CCACHE_MAXSIZE: 20G
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout CI repo
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -36,7 +37,7 @@ jobs:
           sudo apt install -y \
             git curl bc bison flex build-essential \
             libssl-dev libelf-dev ccache \
-            python3 python3-pip lld llvm
+            python3 lld llvm
 
       - name: Restore ccache
         uses: actions/cache@v4
@@ -62,9 +63,15 @@ jobs:
       - name: Build kernel
         run: |
           set -o pipefail
+
           export PATH="$PWD/clang/bin:$PATH"
+
+          # ===== HOST tools (isolation) =====
           export HOSTCC=gcc
+          export HOSTCXX=g++
           export HOSTLD=ld
+
+          # ===== Kernel toolchain =====
           export CC="ccache clang"
           export LD=ld.lld
           export LLVM=1
@@ -75,17 +82,18 @@ jobs:
 
           make O=out ${{ github.event.inputs.defconfig }}
 
-          # ===== vdso32 auto-disable =====
+          # ===== vdso32 auto-disable (arm32 linker fix) =====
           if grep -q CONFIG_COMPAT_VDSO=y out/.config; then
+            echo "⚠️ COMPAT_VDSO detected, disabling vdso32"
             scripts/config --file out/.config \
               -d CONFIG_COMPAT_VDSO \
               -d CONFIG_VDSO32
             make O=out olddefconfig
           fi
 
-          make O=out -j$(nproc) | tee build.log
+          make O=out -j$(nproc) 2>&1 | tee build.log
 
-      - name: Detect kernel type + header
+      - name: Detect kernel type + boot header
         run: |
           cd kernel
 
@@ -98,7 +106,7 @@ jobs:
           KV=$(strings out/vmlinux | grep "Linux version" | head -n1)
           echo "KERNEL_VERSION=$KV" >> $GITHUB_ENV
 
-          if echo "$KV" | grep -q "Android 12\|Android 13\|Android 14"; then
+          if echo "$KV" | grep -Eq "Android (12|13|14)"; then
             echo "BOOT_HEADER=4" >> $GITHUB_ENV
           else
             echo "BOOT_HEADER=3" >> $GITHUB_ENV
