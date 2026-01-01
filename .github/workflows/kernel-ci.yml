@@ -6,159 +6,158 @@ on:
       codename:
         description: "Device codename (e.g. stone)"
         required: true
-        type: string
       defconfig:
-        description: "Defconfig name (e.g. stone_defconfig)"
+        description: "Kernel defconfig (e.g. stone_defconfig)"
         required: true
-        type: string
-      kernel_source:
+      kernel_repo:
         description: "Kernel source git URL"
         required: true
-        type: string
       kernel_branch:
         description: "Kernel branch"
         required: true
-        type: string
-      enable_kernelsu:
-        description: "Enable KernelSU-Next"
+      kernelsu_next:
+        description: "Enable KernelSU-Next (true/false)"
         required: true
         default: "false"
-        type: choice
-        options:
-          - "true"
-          - "false"
+      susfs:
+        description: "Enable SUSFS (true/false)"
+        required: true
+        default: "false"
 
 jobs:
   build:
     runs-on: ubuntu-22.04
 
+    env:
+      ARCH: arm64
+      SUBARCH: arm64
+      CC: clang
+      LLVM: 1
+      LLVM_IAS: 1
+      KBUILD_BUILD_USER: CI
+      KBUILD_BUILD_HOST: GitHub
+
     steps:
-      - name: Checkout repo
+      - name: Checkout CI repo
         uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y \
-            bc bison build-essential ccache flex git \
-            libssl-dev python3 python3-pip zip unzip \
-            gcc g++ clang lld
+            bc bison build-essential ccache curl flex git \
+            libssl-dev python3 zip unzip rsync dwarves
 
       - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          max-size: 10G
+
+      - name: Restore Proton clang cache
+        uses: actions/cache@v4
+        with:
+          path: clang
+          key: proton-clang-r522817
+
+      - name: Clone Proton Clang
+        if: ${{ !exists('clang/bin/clang') }}
         run: |
-          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
-          ccache -M 20G
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+
+      - name: Export toolchain
+        run: |
+          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
 
       - name: Clone kernel source
         run: |
           git clone --depth=1 \
             -b "${{ inputs.kernel_branch }}" \
-            "${{ inputs.kernel_source }}" kernel
+            "${{ inputs.kernel_repo }}" kernel
 
-      - name: Clone Proton Clang
-        run: |
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
-
-      - name: KernelSU-Next (optional)
-        if: ${{ inputs.enable_kernelsu == 'true' }}
+      - name: KernelSU-Next integration
+        if: inputs.kernelsu_next == 'true'
         run: |
           cd kernel
           curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
 
-      - name: Build kernel
+      - name: SUSFS toggle
+        if: inputs.susfs == 'true'
         run: |
-          set -o pipefail
+          cd kernel
+          scripts/config --enable CONFIG_KSU_SUSFS || true
+
+      - name: Build kernel
+        id: build
+        run: |
+          set -eo pipefail
           cd kernel
 
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export PATH="$GITHUB_WORKSPACE/clang/bin:/usr/lib/ccache:$PATH"
-
-          export CC="ccache clang"
-          export LD=ld.lld
-          export LLVM=1
-          export LLVM_IAS=1
-          export HOSTCC=gcc
-          export HOSTCXX=g++
-
           mkdir -p out
-
           make O=out ${{ inputs.defconfig }}
 
-          # Disable WERROR (universal fix)
-          scripts/config --file out/.config -d CONFIG_WERROR || true
-
-          # Auto-disable vdso32 if present
+          # vdso32 auto-disable
           if grep -q CONFIG_COMPAT_VDSO=y out/.config; then
-            echo "⚠️ COMPAT_VDSO detected, disabling"
             scripts/config --file out/.config \
               -d CONFIG_COMPAT_VDSO \
               -d CONFIG_VDSO32
+            make O=out olddefconfig
           fi
 
-          make O=out olddefconfig
+          make -j$(nproc) O=out 2>&1 | tee build.log
 
-          make -j$(nproc) O=out Image 2>&1 | tee build.log
-
-      - name: Save build log
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: kernel/build.log
-
-      - name: Save error log
-        if: failure()
+      - name: Detect kernel type & info
+        id: info
         run: |
-          echo "Build failed" > error.log
-        continue-on-error: true
-
-      - name: Upload error log
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: error-log
-          path: error.log
-
-      - name: mkbootimg (AOSP)
-        if: success()
-        run: |
-          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
-
-          IMAGE=kernel/out/arch/arm64/boot/Image
-          if [ ! -f "$IMAGE" ]; then
-            echo "Image not found!"
-            exit 1
+          cd kernel
+          VERSION=$(make kernelversion)
+          if grep -q CONFIG_GKI=y out/.config; then
+            TYPE=GKI
+          else
+            TYPE=NON-GKI
           fi
+          CLANG_VER=$(clang --version | head -n1)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "type=$TYPE" >> $GITHUB_OUTPUT
+          echo "clang=$CLANG_VER" >> $GITHUB_OUTPUT
 
-          mkdir -p ramdisk
-          (cd ramdisk && find . | cpio -o -H newc | gzip) > ramdisk.img
+      - name: Prepare artifacts
+        run: |
+          mkdir artifacts
+          cp kernel/build.log artifacts/
 
-          HEADER_VER=4
-          python3 tools/mkbootimg/mkbootimg.py \
-            --kernel "$IMAGE" \
-            --ramdisk ramdisk.img \
-            --header_version $HEADER_VER \
-            -o boot.img
+          IMAGE=$(find kernel/out/arch/arm64/boot -name Image | head -n1)
+          cp "$IMAGE" artifacts/Image
 
-      - name: AnyKernel3 ZIP
+      - name: AnyKernel3 packaging
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 anykernel
+          cp artifacts/Image anykernel/
+          sed -i "s/device.name=.*/device.name=${{ inputs.codename }}/" anykernel/anykernel.sh
+          cd anykernel
+          zip -r9 ../artifacts/AnyKernel-${{ inputs.codename }}.zip *
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-${{ inputs.codename }}
+          path: artifacts/*
+
+      - name: Telegram SUCCESS
         if: success()
         run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ak3
-          cp boot.img ak3/
-          cd ak3
-          zip -r9 ../AnyKernel3-${{ inputs.codename }}.zip *
+          MSG="✅ Kernel build successful\n\
+📱 Device: ${{ inputs.codename }}\n\
+🧠 Type: ${{ steps.info.outputs.type }}\n\
+🔢 Kernel: ${{ steps.info.outputs.version }}\n\
+🛠️ ${{ steps.info.outputs.clang }}"
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage \
+            -d chat_id=${{ secrets.TG_CHAT_ID }} \
+            -d text="$MSG"
 
-      - name: Upload boot.img
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: boot-img
-          path: boot.img
-
-      - name: Upload AnyKernel ZIP
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: anykernel-zip
-          path: AnyKernel3-${{ inputs.codename }}.zip
+      - name: Telegram FAILURE
+        if: failure()
+        run: |
+          MSG="❌ Kernel build failed\n📱 Device: ${{ inputs.codename }}"
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage \
+            -d chat_id=${{ secrets.TG_CHAT_ID }} \
+            -d text="$MSG"
