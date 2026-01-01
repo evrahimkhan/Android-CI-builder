@@ -6,24 +6,19 @@ on:
       devicename:
         description: "Device codename"
         required: true
-
       defconfig:
         description: "Kernel defconfig"
         required: true
-
       kernel_repo:
         description: "Kernel source repo"
         required: true
-
       kernel_branch:
         description: "Kernel branch"
         required: true
         default: "main"
-
       anykernel_repo:
         description: "AnyKernel3 repo"
         required: true
-
       kernelsu:
         description: "Enable KernelSU-Next (true/false)"
         required: true
@@ -34,19 +29,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ---------------- CHECKOUT ----------------
       - name: Checkout CI repo
         uses: actions/checkout@v4
 
-      # ---------------- CACHE ----------------
-      - name: Cache clang
-        uses: actions/cache@v4
-        with:
-          path: clang
-          key: clang-${{ runner.os }}
-
       # ---------------- DEPENDENCIES ----------------
-      - name: Install build dependencies
+      - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y \
@@ -64,18 +51,28 @@ jobs:
           bash Common/clang.sh
 
       # ---------------- KERNEL ----------------
-      - name: Clone kernel source
+      - name: Clone kernel
         run: |
           git clone --depth=1 \
             -b ${{ inputs.kernel_branch }} \
             ${{ inputs.kernel_repo }} kernel
 
-      # ---------------- KERNELSU NEXT ----------------
+      # ---------------- KernelSU-Next ----------------
       - name: Integrate KernelSU-Next
         if: ${{ inputs.kernelsu == 'true' }}
         run: |
           cd kernel
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+
+      # ---------------- AUTO vdso32 DETECT ----------------
+      - name: Auto detect vdso32 support
+        run: |
+          cd kernel
+          if grep -q "CONFIG_COMPAT_VDSO=y" arch/arm64/configs/${{ inputs.defconfig }} 2>/dev/null; then
+            echo "VDSO32_SUPPORTED=true" >> $GITHUB_ENV
+          else
+            echo "VDSO32_SUPPORTED=false" >> $GITHUB_ENV
+          fi
 
       # ---------------- BUILD ----------------
       - name: Build kernel
@@ -84,15 +81,32 @@ jobs:
 
           export ARCH=arm64
           export SUBARCH=arm64
+
           export PATH=$PWD/clang/bin:$PATH
+
+          export CC=clang
+          export HOSTCC=clang
+
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+          # 🔥 FIX OPTION 2 (vdso32 safe)
           export LD=aarch64-linux-gnu-ld
-          export LD32=arm-linux-gnueabihf-ld
+          export LD32=arm-linux-gnueabi-ld
 
           cd kernel
+
           make O=out ${{ inputs.defconfig }}
+
+          if [ "$VDSO32_SUPPORTED" = "false" ]; then
+            echo "Disabling COMPAT_VDSO"
+            scripts/config --file out/.config -d CONFIG_COMPAT_VDSO
+            make O=out olddefconfig
+          fi
 
           make -j$(nproc) O=out \
             CC=clang \
+            HOSTCC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             2>&1 | tee ../build.log
@@ -110,7 +124,7 @@ jobs:
           echo "ZIPNAME=$ZIPNAME" >> $GITHUB_ENV
 
       # ---------------- ARTIFACTS ----------------
-      - name: Upload flashable ZIP
+      - name: Upload ZIP
         if: success()
         uses: actions/upload-artifact@v4
         with:
@@ -148,8 +162,8 @@ jobs:
             "${{ inputs.kernelsu }}" \
             "$STATUS")
 
-          BUTTONS=$(printf '{"inline_keyboard":[[{"text":"⬇ Download ZIP","url":"%s"},{"text":"🔁 Workflow","url":"%s"}]]}' \
-            "$RUN_URL" "$RUN_URL")
+          BUTTONS=$(printf '{"inline_keyboard":[[{"text":"⬇ Download ZIP","url":"%s"}]]}' \
+            "$RUN_URL")
 
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TG_CHAT_ID }}" \
