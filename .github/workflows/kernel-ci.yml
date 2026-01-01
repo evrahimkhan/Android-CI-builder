@@ -122,13 +122,10 @@ jobs:
             STATUS="❌ BUILD FAILED"
           fi
 
-          MSG=$(cat <<EOF
-Android Kernel CI
+          MSG="Android Kernel CI
 Device: ${{ inputs.devicename }}
 Status: $STATUS
-Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
-EOF
-          )
+Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TG_CHAT_ID }}" \
