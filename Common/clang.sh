@@ -1,115 +1,53 @@
 #!/usr/bin/env bash
 
-git clone --recursive --depth=1 https://github.com/KanariaAlt/tc-build $(pwd)/llvmTC -b main
-cd $(pwd)/llvmTC
-
-bash ci.sh deps
-
 # Function to show an informational message
 msg() {
     echo -e "\e[1;32m$*\e[0m"
 }
 err() {
-    echo -e "\e[1;41$*\e[0m"
+    echo -e "\e[1;41m$*\e[0m"
 }
-
-# Environment Config
-export BRANCH=main
-export CACHE=1
 
 # Get home directory
-DIR="$(pwd ...)"
+DIR="$(pwd)"
 install=$DIR/install
-src=$DIR/src
 
-# Build Info
-rel_date="$(date "+%Y%m%d")" # ISO 8601 format
-rel_friendly_date="$(date "+%B %-d, %Y")" # "Month day, year" format
-builder_commit="$(git rev-parse HEAD)"
+# LLVM/Clang version to download
+LLVM_VERSION="17.0.6"
+LLVM_RELEASE_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/clang+llvm-${LLVM_VERSION}-x86_64-linux-gnu-ubuntu-22.04.tar.xz"
 
-# Building LLVM's
-msg "Building LLVM's ..."
-chmod +x build-llvm.py
-./build-llvm.py \
-    --defines LLVM_PARALLEL_COMPILE_JOBS="$(nproc)" LLVM_PARALLEL_LINK_JOBS="$(nproc)" CMAKE_C_FLAGS=-O3 CMAKE_CXX_FLAGS=-O3 \
-    --install-folder "$install" \
-    --quiet-cmake \
-    --shallow-clone \
-    --targets ARM AArch64 X86 \
-    --ref "release/21.x" \
-    --vendor-string "$LLVM_NAME" 2>&1 | tee build.log
-
-# Check if the final clang binary exists or not.
-[ ! -f install/bin/clang-2* ] && {
-	err "Building LLVM failed ! Kindly check errors !!"
-	err "build.log" "Error Log"
-	exit 1
+msg "Downloading pre-built LLVM/Clang ${LLVM_VERSION}..."
+wget -q --show-progress "$LLVM_RELEASE_URL" -O clang-llvm.tar.xz || {
+    err "Failed to download LLVM/Clang!"
+    exit 1
 }
 
-# Build binutils
-msg "Build binutils ..."
-chmod +x build-binutils.py
-./build-binutils.py \
-    --install-folder "$install" \
-    --targets arm aarch64 x86_64
+msg "Extracting LLVM/Clang..."
+mkdir -p "$install"
+tar -xf clang-llvm.tar.xz --strip-components=1 -C "$install" || {
+    err "Failed to extract LLVM/Clang!"
+    exit 1
+}
 
-rm -fr install/include
-rm -f install/lib/*.a install/lib/*.la
+# Clean up downloaded archive
+rm -f clang-llvm.tar.xz
 
-for f in $(find install -type f -exec file {} \; | grep 'not stripped' | awk '{print $1}'); do
-    strip -s "${f::-1}"
-done
+# Verify installation
+if [ ! -f "$install/bin/clang" ]; then
+    err "Clang binary not found after extraction!"
+    exit 1
+fi
 
-for bin in $(find install -mindepth 2 -maxdepth 3 -type f -exec file {} \; | grep 'ELF .* interpreter' | awk '{print $1}'); do
-    bin="${bin::-1}"
+msg "LLVM/Clang ${LLVM_VERSION} successfully installed at: $install"
 
-    echo "$bin"
-    patchelf --set-rpath "$DIR/../lib" "$bin"
-done
+# Get clang version info
+clang_version="$($install/bin/clang --version | head -n1)"
+msg "Clang version: $clang_version"
 
-# Git config
-wget https://raw.githubusercontent.com/evrahimkhan/Android-CI-builder/main/Common/Git-Config.sh
-bash Git-Config.sh
+# Add clang to PATH for current session
+export PATH="$install/bin:$PATH"
 
-# Release Info
-pushd "$src"/llvm-project || exit
-llvm_commit="$(git rev-parse HEAD)"
-short_llvm_commit="$(cut -c-8 <<<"$llvm_commit")"
-popd || exit
-
-llvm_commit_url="https://github.com/llvm/llvm-project/commit/$short_llvm_commit"
-binutils_ver="$(ls | grep "^binutils-" | sed "s/binutils-//g")"
-clang_version="$(install/bin/clang --version | head -n1 | cut -d' ' -f4)"
-
-# Push to GitHub
-# Update Git repository
-git clone "https://Carlotta-Montelli:$GH_TOKEN@github.com/Carlotta-Montelli/carlotta-clang" -b 21 rel_repo
-pushd rel_repo || exit
-rm -fr ./*
-cp -r ../install/* .
-git lfs install
-git lfs track "clang-21"
-git lfs track "opt"
-git lfs track "clang-linker-wrapper"
-git lfs track "clang-repl"
-git lfs track "llc"
-git lfs track "llvm-lto2"
-git lfs track "llvm-lto"
-git lfs track "libLTO.so"
-git lfs track "bugpoint"
-git lfs track "clang-scan-deps"
-git lfs track "lld"
-git lfs track "llvm-reduce"
-git lfs track "libclang.so.21.1.3"
-git lfs track "libclang-cpp.so.21.1"
-git lfs track "clang-nvlink-wrapper"
-git lfs track "libLTO.so.21.1"
-git checkout README.md # keep this as it's not part of the toolchain itself
-git add .
-git commit -asm "Clang: Update to $rel_date build
-LLVM commit: $llvm_commit_url
-Clang Version: $clang_version
-Binutils version: $binutils_ver
-Builder commit: https://github.com/Carlotta-Montelli/carlotta-clang/commit/$builder_commit"
-git push -f
-popd || exit
+msg "Clang is ready to use!"
+msg "Clang path: $install/bin/clang"
+msg "To use clang in your build, add it to PATH:"
+msg "  export PATH=\"$install/bin:\$PATH\""
