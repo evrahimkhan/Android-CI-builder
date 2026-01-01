@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       devicename:
-        description: "Device Codename"
+        description: "Device codename (e.g. moonstone)"
         required: true
 
       defconfig:
@@ -29,23 +29,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ---------------- CHECKOUT ----------------
       - name: Checkout CI repo
         uses: actions/checkout@v4
 
-      # -------------------- CACHE --------------------
-      - name: Cache Clang
+      # ---------------- CACHE ----------------
+      - name: Cache clang
         uses: actions/cache@v4
         with:
           path: clang
           key: clang-${{ runner.os }}
 
-      - name: Cache Kernel Out
-        uses: actions/cache@v4
-        with:
-          path: kernel/out
-          key: kernel-${{ inputs.devicename }}-${{ github.run_id }}
-
-      # -------------------- DEPS --------------------
+      # ---------------- DEPS ----------------
       - name: Install dependencies
         run: |
           sudo apt update
@@ -56,21 +51,20 @@ jobs:
             gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
             gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
 
-      # -------------------- TOOLCHAIN --------------------
-      - name: Setup Clang
+      # ---------------- CLANG ----------------
+      - name: Setup clang
         run: |
           chmod +x Common/clang.sh
           bash Common/clang.sh
 
-      # -------------------- KERNEL --------------------
-      - name: Clone Kernel
+      # ---------------- KERNEL ----------------
+      - name: Clone kernel
         run: |
           git clone --depth=1 \
             -b ${{ inputs.kernel_branch }} \
             ${{ inputs.kernel_repo }} kernel
 
-      - name: Build Kernel
-        id: build
+      - name: Build kernel
         run: |
           set -o pipefail
 
@@ -87,17 +81,16 @@ jobs:
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             2>&1 | tee ../build.log
 
-      # -------------------- BOOT.IMG --------------------
+      # ---------------- BOOT IMG ----------------
       - name: Build boot.img
         if: success()
         run: |
           git clone --depth=1 ${{ inputs.anykernel_repo }} AnyKernel
           cp kernel/out/arch/arm64/boot/Image AnyKernel/
-
           cd AnyKernel
           ./mkbootimg.sh || true
 
-      # -------------------- ARTIFACTS --------------------
+      # ---------------- ARTIFACTS ----------------
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -119,25 +112,21 @@ jobs:
           name: boot-img
           path: AnyKernel/*.img
 
-      # -------------------- TELEGRAM --------------------
+      # ---------------- TELEGRAM ----------------
       - name: Telegram notify
         if: always()
         run: |
-          STATUS="✅ BUILD SUCCESS"
-          [ "${{ job.status }}" != "success" ] && STATUS="❌ BUILD FAILED"
+          if [ "${{ job.status }}" = "success" ]; then
+            STATUS="✅ BUILD SUCCESS"
+          else
+            STATUS="❌ BUILD FAILED"
+          fi
 
-          MSG="*Android Kernel CI*
-Device: \`${{ inputs.devicename }}\`
-Status: *$STATUS*
-Run: [GitHub]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+          TEXT="Android Kernel CI
+Device: ${{ inputs.devicename }}
+Status: $STATUS
+Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
-          curl -s -X POST https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage \
-            -d chat_id=${{ secrets.TG_CHAT_ID }} \
-            -d parse_mode=Markdown \
-            -d text="$MSG" \
-            -d reply_markup='{
-              "inline_keyboard":[
-                [{"text":"📦 Artifacts","url":"'"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"'"}],
-                [{"text":"🌐 Repo","url":"'"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"'"}]
-              ]
-            }'
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TG_CHAT_ID }}" \
+            -d text="$TEXT"
