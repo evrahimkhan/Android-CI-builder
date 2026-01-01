@@ -1,25 +1,55 @@
-name: Android Kernel CI Builder
+name: Universal Android Kernel CI
 
 on:
   workflow_dispatch:
     inputs:
+      CODENAME:
+        description: "Device codename (e.g. moonstone)"
+        required: true
+        default: "moonstone"
+
+      KERNEL_SOURCE:
+        description: "Kernel source git link"
+        required: true
+        default: "https://github.com/vendor/kernel"
+
+      KERNEL_BRANCH:
+        description: "Kernel branch"
+        required: true
+        default: "android13"
+
+      DEFCONFIG:
+        description: "Defconfig (e.g. vendor_defconfig / gki_defconfig)"
+        required: true
+        default: "vendor_defconfig"
+
+      TOOLCHAIN:
+        description: "Select Clang Toolchain"
+        required: true
+        default: "proton"
+        type: choice
+        options: [proton, neutron]
+
+      FORCE_GKI:
+        description: "Force GKI build (auto-detect if false)"
+        required: true
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
       KERNELSU_NEXT:
         description: "Enable KernelSU-Next"
         required: true
         default: "false"
         type: choice
-        options:
-          - "true"
-          - "false"
+        options: ["true", "false"]
 
       SUSFS:
         description: "Enable SUSFS (KernelSU-Next only)"
         required: true
         default: "false"
         type: choice
-        options:
-          - "true"
-          - "false"
+        options: ["true", "false"]
 
 jobs:
   build:
@@ -28,106 +58,124 @@ jobs:
     env:
       ARCH: arm64
       SUBARCH: arm64
-      KBUILD_BUILD_USER: CI
-      KBUILD_BUILD_HOST: GitHub
       TZ: Asia/Dhaka
+      CCACHE_DIR: ~/.ccache
+      CCACHE_MAXSIZE: 6G
 
     steps:
-      - name: 📥 Checkout
+      - name: 📥 Checkout CI repo
         uses: actions/checkout@v4
+
+      - name: 📦 Clone kernel source
+        run: |
+          git clone --depth=1 -b ${{ inputs.KERNEL_BRANCH }} \
+            ${{ inputs.KERNEL_SOURCE }} kernel
 
       - name: 🧰 Install dependencies
         run: |
           sudo apt update
           sudo apt install -y \
-            git curl bc bison flex libssl-dev \
-            build-essential python3 \
+            git curl bc bison flex \
+            libssl-dev build-essential \
+            python3 libncurses-dev \
             gcc-aarch64-linux-gnu \
             gcc-arm-linux-gnueabi \
-            libncurses-dev ccache
+            ccache zip mkbootimg
 
-      - name: ⚙️ Setup toolchain
-        run: |
-          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
-          echo "CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> $GITHUB_ENV
-          echo "PATH=/usr/lib/ccache:$PATH" >> $GITHUB_ENV
+      - name: ⚡ Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ inputs.CODENAME }}-${{ github.ref }}
 
-      - name: 🔍 Kernel version detect
+      - name: ⚙️ Setup Clang
         run: |
-          make kernelversion > kernel_version.txt
-          echo "KERNEL_VERSION=$(cat kernel_version.txt)" >> $GITHUB_ENV
-
-      - name: 🔐 KernelSU-Next (optional)
-        if: ${{ inputs.KERNELSU_NEXT == 'true' }}
-        run: |
-          curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
-          if [ "${{ inputs.SUSFS }}" = "true" ]; then
-            echo "CONFIG_KSU_SUSFS=y" >> arch/arm64/configs/vendor_defconfig
+          if [ "${{ inputs.TOOLCHAIN }}" = "proton" ]; then
+            git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+          else
+            git clone --depth=1 https://github.com/Neutron-Toolchains/clang clang
           fi
 
-      - name: ⚙️ Defconfig
-        run: |
-          mkdir -p out
-          make O=out vendor_defconfig
+          echo "PATH=$PWD/clang/bin:$PATH" >> $GITHUB_ENV
+          echo "CC=ccache clang" >> $GITHUB_ENV
+          echo "LD=ld.lld" >> $GITHUB_ENV
+          echo "AR=llvm-ar" >> $GITHUB_ENV
+          echo "NM=llvm-nm" >> $GITHUB_ENV
+          echo "OBJCOPY=llvm-objcopy" >> $GITHUB_ENV
+          echo "STRIP=llvm-strip" >> $GITHUB_ENV
+          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
+          echo "CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> $GITHUB_ENV
 
-      - name: 🛑 Auto disable vdso32 if broken
+      - name: 🔍 Detect GKI / Non-GKI
         run: |
-          set -o pipefail
+          cd kernel
+          if [ "${{ inputs.FORCE_GKI }}" = "true" ]; then
+            echo "KERNEL_TYPE=GKI" >> $GITHUB_ENV
+          elif [ -d common ] || grep -qr "gki_defconfig" arch/arm64/configs; then
+            echo "KERNEL_TYPE=GKI" >> $GITHUB_ENV
+          else
+            echo "KERNEL_TYPE=NON-GKI" >> $GITHUB_ENV
+          fi
+
+      - name: 🔐 KernelSU-Next
+        if: ${{ inputs.KERNELSU_NEXT == 'true' }}
+        run: |
+          cd kernel
+          curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
+          if [ "${{ inputs.SUSFS }}" = "true" ]; then
+            scripts/config --enable CONFIG_KSU_SUSFS
+          fi
+
+      - name: ⚙️ Configure kernel
+        run: |
+          cd kernel
+          mkdir -p out
+          make O=out ${{ inputs.DEFCONFIG }}
+
+      - name: 🛑 vdso32 safe fix
+        run: |
+          cd kernel
           if grep -q CONFIG_COMPAT_VDSO=y out/.config; then
-            echo "⚠️ COMPAT_VDSO detected, disabling vdso32"
+            echo "⚠️ Disabling vdso32"
             scripts/config --file out/.config \
               -d CONFIG_COMPAT_VDSO \
               -d CONFIG_ARM64_VDSO32
             make O=out olddefconfig
           fi
 
-      - name: 🏗️ Build kernel (Werror fixed)
+      - name: 🏗️ Build kernel
         run: |
+          cd kernel
           set -o pipefail
           make -j$(nproc) O=out \
+            LLVM=1 LLVM_IAS=1 \
             KCFLAGS=-Wno-error \
             2>&1 | tee build.log
 
-      - name: 📦 Prepare AnyKernel
+      - name: 📦 AnyKernel3 (OTA-ready)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3 anykernel
-          cp out/arch/arm64/boot/Image anykernel/
+          cp kernel/out/arch/arm64/boot/Image anykernel/
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel/anykernel.sh
 
-      - name: 📦 Create AnyKernel ZIP
+      - name: 📦 Create ZIP
         run: |
           cd anykernel
-          zip -r9 ../AnyKernel-${{ env.KERNEL_VERSION }}.zip *
+          zip -r9 ../AnyKernel-${{ inputs.CODENAME }}.zip *
           cd ..
 
-      - name: 📱 Build boot.img (mkbootimg)
+      - name: 📱 Build boot.img
         run: |
-          sudo apt install -y mkbootimg
           mkbootimg \
-            --kernel out/arch/arm64/boot/Image \
+            --kernel kernel/out/arch/arm64/boot/Image \
             --header_version 3 \
-            --os_version 13 \
-            --os_patch_level 2024-01-01 \
             -o boot.img
 
       - name: ⬆️ Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-${{ env.KERNEL_VERSION }}
+          name: Kernel-${{ inputs.CODENAME }}
           path: |
-            AnyKernel-${{ env.KERNEL_VERSION }}.zip
+            AnyKernel-*.zip
             boot.img
-            build.log
-
-      - name: 📲 Telegram notify with download button
-        if: always()
-        run: |
-          ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          TEXT="✅ Kernel Build Finished%0A📦 Version: ${{ env.KERNEL_VERSION }}"
-          curl -s -X POST https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage \
-            -d chat_id=${{ secrets.TG_CHAT_ID }} \
-            -d text="$TEXT" \
-            -d reply_markup='{
-              "inline_keyboard":[
-                [{"text":"⬇️ Download Artifacts","url":"'"$ARTIFACT_URL"'"}]
-              ]
-            }'
+            kernel/build.log
