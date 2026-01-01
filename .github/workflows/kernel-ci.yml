@@ -4,22 +4,18 @@ on:
   workflow_dispatch:
     inputs:
       devicename:
-        description: "Device codename (e.g. moonstone)"
+        description: "Device codename"
         required: true
-
       defconfig:
         description: "Kernel defconfig"
         required: true
-
       kernel_repo:
         description: "Kernel source repo"
         required: true
-
       kernel_branch:
         description: "Kernel branch"
         required: true
         default: "main"
-
       anykernel_repo:
         description: "AnyKernel3 repo"
         required: true
@@ -29,35 +25,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ---------- CHECKOUT ----------
-      - name: Checkout CI repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # ---------- CACHE ----------
       - name: Cache clang
         uses: actions/cache@v4
         with:
           path: clang
           key: clang-${{ runner.os }}
 
-      # ---------- DEPENDENCIES ----------
-      - name: Install dependencies
+      - name: Install deps
         run: |
           sudo apt update
           sudo apt install -y \
-            bc bison build-essential curl flex git gperf \
+            bc bison build-essential flex git gperf \
             libncurses-dev libssl-dev libelf-dev lzop \
             python3 unzip zip wget \
             gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
             gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
 
-      # ---------- CLANG ----------
       - name: Setup clang
         run: |
           chmod +x Common/clang.sh
           bash Common/clang.sh
 
-      # ---------- KERNEL ----------
       - name: Clone kernel
         run: |
           git clone --depth=1 \
@@ -67,7 +57,6 @@ jobs:
       - name: Build kernel
         run: |
           set -o pipefail
-
           export ARCH=arm64
           export SUBARCH=arm64
           export PATH=$PWD/clang/bin:$PATH
@@ -81,7 +70,6 @@ jobs:
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             2>&1 | tee ../build.log
 
-      # ---------- BOOT.IMG ----------
       - name: Build boot.img
         if: success()
         run: |
@@ -90,7 +78,6 @@ jobs:
           cd AnyKernel
           ./mkbootimg.sh || true
 
-      # ---------- ARTIFACTS ----------
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -105,27 +92,19 @@ jobs:
           name: error-log
           path: build.log
 
-      - name: Upload boot image
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: boot-img
-          path: AnyKernel/*.img
-
-      # ---------- TELEGRAM ----------
       - name: Telegram notify
         if: always()
         run: |
           if [ "${{ job.status }}" = "success" ]; then
-            STATUS="✅ BUILD SUCCESS"
+            STATUS="SUCCESS"
           else
-            STATUS="❌ BUILD FAILED"
+            STATUS="FAILED"
           fi
 
-          MSG="Android Kernel CI
-Device: ${{ inputs.devicename }}
-Status: $STATUS
-Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          MSG=$(printf "Android Kernel CI\nDevice: %s\nStatus: %s\nRun: %s" \
+            "${{ inputs.devicename }}" \
+            "$STATUS" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")
 
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TG_CHAT_ID }}" \
