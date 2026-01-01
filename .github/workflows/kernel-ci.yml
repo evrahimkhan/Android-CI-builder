@@ -1,179 +1,135 @@
-name: Android Kernel CI Builder
+name: Android Kernel CI
 
 on:
   workflow_dispatch:
     inputs:
-      devicename:
-        description: "Device codename"
-        required: true
-      defconfig:
-        description: "Kernel defconfig"
-        required: true
       kernel_repo:
-        description: "Kernel source repo"
+        description: "Kernel source repo URL"
         required: true
       kernel_branch:
         description: "Kernel branch"
         required: true
-        default: "main"
-      anykernel_repo:
-        description: "AnyKernel3 repo"
+        default: main
+      defconfig:
+        description: "Kernel defconfig (e.g. vendor/moonstone_defconfig)"
         required: true
-      kernelsu:
-        description: "Enable KernelSU-Next (true/false)"
+      enable_kernelsu_next:
+        description: "Enable KernelSU-Next"
         required: true
         default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+
+    env:
+      ARCH: arm64
+      SUBARCH: arm64
+      TELEGRAM_TOKEN: ${{ secrets.TG_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
 
     steps:
-      # ---------------- CHECKOUT ----------------
       - name: Checkout CI repo
         uses: actions/checkout@v4
 
-      # ---------------- DEPENDENCIES ----------------
       - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y \
-            bc bison build-essential flex git gperf \
-            libncurses-dev libssl-dev libelf-dev lzop \
-            python3 unzip zip wget curl \
-            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi \
-            gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
+            git curl bc bison flex zip unzip \
+            make python3 rsync \
+            gcc-arm-linux-gnueabihf \
+            binutils-arm-linux-gnueabihf
 
-      # ---------------- CLANG ----------------
+      - name: Cache clang
+        uses: actions/cache@v4
+        with:
+          path: clang
+          key: clang-cache-v1
+
       - name: Setup clang
         run: |
-          chmod +x Common/clang.sh
-          bash Common/clang.sh
+          if [ ! -d clang ]; then
+            bash Common/clang.sh
+          fi
+          echo "$(pwd)/clang/bin" >> $GITHUB_PATH
 
-      # ---------------- KERNEL ----------------
       - name: Clone kernel source
         run: |
           git clone --depth=1 \
             -b ${{ inputs.kernel_branch }} \
             ${{ inputs.kernel_repo }} kernel
 
-      # ---------------- KernelSU-Next ----------------
-      - name: Integrate KernelSU-Next
-        if: ${{ inputs.kernelsu == 'true' }}
+      - name: KernelSU-Next integration
+        if: inputs.enable_kernelsu_next == 'true'
         run: |
           cd kernel
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+          curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
 
-      # ---------------- AUTO VDSO32 DETECT ----------------
-      - name: Detect vdso32 support
-        run: |
-          cd kernel
-          if grep -R "CONFIG_COMPAT_VDSO=y" arch/arm64/configs/${{ inputs.defconfig }} 2>/dev/null; then
-            echo "VDSO32_SUPPORTED=true" >> $GITHUB_ENV
-          else
-            echo "VDSO32_SUPPORTED=false" >> $GITHUB_ENV
-          fi
-
-      # ---------------- BUILD ----------------
-      - name: Build kernel
+      - name: Kernel build
         run: |
           set -o pipefail
-
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export PATH=$PWD/clang/bin:$PATH
-
-          export CC=clang
-          export HOSTCC=clang
-
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-
-          # ---- FIX OPTION 2 (vdso32 safe)
-          export LD=aarch64-linux-gnu-ld
-          export LD32=arm-linux-gnueabi-ld
-
           cd kernel
+
+          mkdir -p out
 
           make O=out ${{ inputs.defconfig }}
 
-          # ---- Disable vdso32 ONLY if unsupported AND tool exists
-          if [ "$VDSO32_SUPPORTED" = "false" ] && [ -x scripts/config ]; then
-            echo "Disabling CONFIG_COMPAT_VDSO"
-            scripts/config --file out/.config -d CONFIG_COMPAT_VDSO || true
+          # ---------- AUTO VDSO32 SAFE FIX ----------
+          if grep -q CONFIG_COMPAT_VDSO=y out/.config; then
+            echo "⚠️ COMPAT_VDSO detected, disabling vdso32"
+            scripts/config --file out/.config \
+              -d CONFIG_COMPAT_VDSO \
+              -d CONFIG_VDSO32
             make O=out olddefconfig
           fi
+          # -----------------------------------------
 
-          # ---- MAIN BUILD (never silently fail)
+          export CC=clang
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabihf-
+          export LD32=arm-linux-gnueabihf-ld
+
           make -j$(nproc) O=out \
-            CC=clang \
-            HOSTCC=clang \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            2>&1 | tee ../build.log || true
+            2>&1 | tee ../build.log
 
-          # ---- REAL ERROR DETECT
-          if grep -i "error:" ../build.log; then
-            cp ../build.log ../error.log
+      - name: Check build result
+        run: |
+          if [ ! -f kernel/out/arch/arm64/boot/Image ]; then
+            echo "❌ Kernel build failed"
+            cp build.log error.log
             exit 1
           fi
 
-      # ---------------- ANYKERNEL ZIP ----------------
-      - name: Build flashable ZIP
+      - name: Package AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
+          cp kernel/out/arch/arm64/boot/Image AnyKernel3/
+          cd AnyKernel3
+          zip -r ../Kernel.zip *
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-ZIP
+          path: Kernel.zip
+
+      - name: Telegram notify (success)
         if: success()
         run: |
-          git clone --depth=1 ${{ inputs.anykernel_repo }} AnyKernel
-          cp kernel/out/arch/arm64/boot/Image AnyKernel/
+          MSG="✅ Kernel build SUCCESS"
+          curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
+            -d chat_id=$TELEGRAM_CHAT_ID \
+            -d text="$MSG"
 
-          ZIPNAME="${{ inputs.devicename }}-kernel-${GITHUB_RUN_NUMBER}.zip"
-          cd AnyKernel
-          zip -r "../$ZIPNAME" ./*
-          echo "ZIPNAME=$ZIPNAME" >> $GITHUB_ENV
-
-      # ---------------- ARTIFACTS ----------------
-      - name: Upload ZIP
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-zip
-          path: "*.zip"
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: build.log
-
-      - name: Upload error log
+      - name: Telegram notify (failure)
         if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: error-log
-          path: error.log
-
-      # ---------------- TELEGRAM ----------------
-      - name: Telegram notification
-        if: always()
         run: |
-          if [ "${{ job.status }}" = "success" ]; then
-            STATUS="✅ BUILD SUCCESS"
-          else
-            STATUS="❌ BUILD FAILED"
-          fi
-
-          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-
-          TEXT=$(printf "Android Kernel CI\nDevice: %s\nKernelSU-Next: %s\nStatus: %s" \
-            "${{ inputs.devicename }}" \
-            "${{ inputs.kernelsu }}" \
-            "$STATUS")
-
-          BUTTONS=$(printf '{"inline_keyboard":[[{"text":"⬇ Download","url":"%s"}]]}' \
-            "$RUN_URL")
-
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TG_CHAT_ID }}" \
-            -d text="$TEXT" \
-            -d reply_markup="$BUTTONS"
+          MSG="❌ Kernel build FAILED"
+          curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
+            -d chat_id=$TELEGRAM_CHAT_ID \
+            -d text="$MSG"
