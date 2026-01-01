@@ -21,25 +21,16 @@ on:
         required: true
         default: "main"
 
-      clang_repo:
-        description: "Clang repo URL"
-        required: true
-
-      clang_branch:
-        description: "Clang branch"
-        required: true
-        default: "main"
-
 jobs:
   build:
     name: Build Kernel
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout workflow repo
+      - name: Checkout Android-CI-builder
         uses: actions/checkout@v4
 
-      - name: Setup build environment
+      - name: Setup build dependencies
         run: |
           sudo apt update
           sudo apt install -y \
@@ -52,17 +43,18 @@ jobs:
           git clone --depth=1 \
             -b ${{ inputs.kernel_branch }} \
             ${{ inputs.kernel_repo }} kernel
-          
-      - name: Clone Clang Toolchain
+
+      - name: Setup Clang Toolchain (Common/clang.sh)
         run: |
-          git clone --depth=1 \
-            -b ${{ inputs.clang_branch }} \
-            ${{ inputs.clang_repo }} clang
+          chmod +x Common/clang.sh
+          bash Common/clang.sh
 
       - name: Build Kernel
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
+
+          # clang.sh সাধারণত clang/bin এখানে সেট করে
           export PATH=$PWD/clang/bin:$PATH
 
           cd kernel
