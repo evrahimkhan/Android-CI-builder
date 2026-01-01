@@ -1,47 +1,91 @@
-name: Android Kernel CI
+name: Universal Android Kernel CI
 
 on:
   workflow_dispatch:
     inputs:
       codename:
+        description: "Device codename (e.g. stone)"
         required: true
-        description: Device codename
       defconfig:
+        description: "Kernel defconfig (e.g. stone_defconfig)"
         required: true
-        description: Kernel defconfig
-      kernel_repo:
+      kernel_source:
+        description: "Kernel source git URL"
         required: true
-        description: Kernel source URL
       kernel_branch:
+        description: "Kernel branch"
         required: true
-        description: Kernel branch
-      enable_kernelsu:
-        type: boolean
-        default: false
-        description: Enable KernelSU-Next
+      kernel_name:
+        description: "Kernel display name (optional)"
+        required: false
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout CI repo
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y bc bison flex build-essential \
-            libssl-dev libelf-dev python3 git curl zip ccache
+          sudo apt install -y \
+            git bc bison flex ccache \
+            libssl-dev libelf-dev \
+            python3 zip
 
-      - name: Run kernel CI
-        env:
-          TG_TOKEN: ${{ secrets.TG_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+      - name: Clone kernel source
         run: |
-          chmod +x scripts/ci.sh
-          scripts/ci.sh \
-            "${{ github.event.inputs.codename }}" \
-            "${{ github.event.inputs.defconfig }}" \
-            "${{ github.event.inputs.kernel_repo }}" \
-            "${{ github.event.inputs.kernel_branch }}" \
-            "${{ github.event.inputs.enable_kernelsu }}"
+          git clone --depth=1 \
+            -b ${{ inputs.kernel_branch }} \
+            ${{ inputs.kernel_source }} kernel
+
+      - name: Setup Proton Clang
+        run: |
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+          echo "$PWD/clang/bin" >> $GITHUB_PATH
+
+      - name: Enable ccache
+        run: |
+          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+          echo "USE_CCACHE=1" >> $GITHUB_ENV
+
+      - name: Build kernel
+        run: |
+          set -o pipefail
+          cd kernel
+
+          export ARCH=arm64
+          export CC=clang
+          export LLVM=1
+          export LLVM_IAS=1
+
+          mkdir -p out
+          make O=out ${{ inputs.defconfig }}
+          make -j$(nproc) O=out
+
+      - name: Detect kernel name
+        run: |
+          if [ -n "${{ inputs.kernel_name }}" ]; then
+            echo "${{ inputs.kernel_name }}" > kernel.info
+          elif [ -f kernel/out/include/generated/utsrelease.h ]; then
+            grep UTS_RELEASE kernel/out/include/generated/utsrelease.h \
+              | cut -d '"' -f2 > kernel.info
+          else
+            echo "Custom Android Kernel" > kernel.info
+          fi
+
+      - name: Build AnyKernel3 ZIP
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3
+          cp kernel/out/arch/arm64/boot/Image AnyKernel3/Image
+          cp kernel.info AnyKernel3/kernel.info
+          cd AnyKernel3
+          zip -r9 ../AnyKernel3-${{ inputs.codename }}.zip *
+
+      - name: Upload AnyKernel ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: AnyKernel3-${{ inputs.codename }}
+          path: AnyKernel3-${{ inputs.codename }}.zip
