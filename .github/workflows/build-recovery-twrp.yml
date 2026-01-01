@@ -58,7 +58,7 @@ jobs:
     steps:
       - name: Remove Useless Package
         run: |
-          wget https://raw.githubusercontent.com/KanariaAlt/Android-CI/main/Common/free_disk_space.sh
+          wget https://raw.githubusercontent.com/evrahimkhan/Android-CI-builder/main/Common/free_disk_space.sh
           bash free_disk_space.sh
         
       - name: Set Swap Space
@@ -70,7 +70,7 @@ jobs:
         run: |
           export HOME=${GITHUB_WORKSPACE}
           cd ${GITHUB_WORKSPACE}
-          wget https://raw.githubusercontent.com/KanariaAlt/Android-CI/main/Common/Dependency.sh
+          wget https://raw.githubusercontent.com/evrahimkhan/Android-CI-builder/main/Common/Dependency.sh
           bash Dependency.sh
 
       - name: Install OpenJDK
@@ -81,14 +81,14 @@ jobs:
 
       - name: Install repo
         run: |
-          wget https://raw.githubusercontent.com/KanariaAlt/Android-CI/main/Common/Install_Repo.sh
+          wget https://raw.githubusercontent.com/evrahimkhan/Android-CI-builder/main/Common/Install_Repo.sh
           bash Install_Repo.sh
 
       - name: Init Repo
         run: |
           mkdir ${GITHUB_WORKSPACE}/workspace
           cd ${GITHUB_WORKSPACE}/workspace
-          wget https://raw.githubusercontent.com/KanariaAlt/Android-CI/main/Common/Git-Config.sh
+          wget https://raw.githubusercontent.com/evrahimkhan/Android-CI-builder/main/Common/Git-Config.sh
           bash Git-Config.sh
           repo init --depth=1 -u $MANIFEST -b $MANIFESTBRANCH
         
