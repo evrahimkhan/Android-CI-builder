@@ -90,7 +90,7 @@ jobs:
     steps:
       - name: "Install Dependency"
         run: |
-          wget https://raw.githubusercontent.com/KanariaAlt/Android-CI/main/Common/Dependency.sh
+          wget https://raw.githubusercontent.com/evrahimkhan/Android-CI-builder/main/Common/Dependency.sh
           bash Dependency.sh
 
       - name: Set swap to 10G
@@ -100,7 +100,7 @@ jobs:
       
       - name: Set Git Config
         run: |
-          wget https://raw.githubusercontent.com/KanariaAlt/Android-CI/main/Common/Git-Config.sh
+          wget https://raw.githubusercontent.com/evrahimkhan/Android-CI-builder/main/Common/Git-Config.sh
           bash Git-Config.sh
 
       - name: "Setup Anykernel3"
