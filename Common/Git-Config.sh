@@ -18,5 +18,5 @@ echo "==========================================================================
 echo "Add Git Config"
 echo "=============================================================================="
 
-git config --global user.name "Carlotta-Montelli"
-git config --global user.email "carlotta.montelli.0201@gmail.com"
+git config --global user.name "evrahimkhan"
+git config --global user.email "evrahimkhan87@gmail.com"
