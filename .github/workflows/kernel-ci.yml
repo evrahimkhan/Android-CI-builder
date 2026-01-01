@@ -1,181 +1,157 @@
-name: Universal Android Kernel CI
+name: Universal Android Kernel CI (Proton Clang)
 
 on:
   workflow_dispatch:
     inputs:
-      CODENAME:
+      codename:
         description: "Device codename (e.g. moonstone)"
         required: true
-        default: "moonstone"
-
-      KERNEL_SOURCE:
-        description: "Kernel source git link"
+      defconfig:
+        description: "Kernel defconfig (e.g. vendor/moonstone_defconfig)"
         required: true
-        default: "https://github.com/vendor/kernel"
-
-      KERNEL_BRANCH:
+      kernel_source:
+        description: "Kernel source git URL"
+        required: true
+      kernel_branch:
         description: "Kernel branch"
         required: true
-        default: "android13"
-
-      DEFCONFIG:
-        description: "Defconfig (e.g. vendor_defconfig / gki_defconfig)"
-        required: true
-        default: "vendor_defconfig"
-
-      TOOLCHAIN:
-        description: "Select Clang Toolchain"
-        required: true
-        default: "proton"
-        type: choice
-        options: [proton, neutron]
-
-      FORCE_GKI:
-        description: "Force GKI build (auto-detect if false)"
-        required: true
-        default: "false"
-        type: choice
-        options: ["true", "false"]
-
-      KERNELSU_NEXT:
+        default: "main"
+      enable_ksu_next:
         description: "Enable KernelSU-Next"
         required: true
         default: "false"
         type: choice
-        options: ["true", "false"]
-
-      SUSFS:
-        description: "Enable SUSFS (KernelSU-Next only)"
+        options: [true, false]
+      enable_susfs:
+        description: "Enable SUSFS (KernelSU)"
         required: true
         default: "false"
         type: choice
-        options: ["true", "false"]
+        options: [true, false]
+      telegram_notify:
+        description: "Telegram notification"
+        required: true
+        default: "true"
+        type: choice
+        options: [true, false]
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     env:
       ARCH: arm64
       SUBARCH: arm64
-      TZ: Asia/Dhaka
+      OUT: out
       CCACHE_DIR: ~/.ccache
-      CCACHE_MAXSIZE: 6G
 
     steps:
-      - name: 📥 Checkout CI repo
+      - name: Checkout CI repo
         uses: actions/checkout@v4
 
-      - name: 📦 Clone kernel source
-        run: |
-          git clone --depth=1 -b ${{ inputs.KERNEL_BRANCH }} \
-            ${{ inputs.KERNEL_SOURCE }} kernel
-
-      - name: 🧰 Install dependencies
+      - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y \
-            git curl bc bison flex \
-            libssl-dev build-essential \
-            python3 libncurses-dev \
-            gcc-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabi \
-            ccache zip mkbootimg
+            git curl bc bison flex libssl-dev make \
+            python3 unzip zip ccache \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
-      - name: ⚡ Restore ccache
+      - name: Restore ccache
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-${{ inputs.CODENAME }}-${{ github.ref }}
+          key: ccache-${{ github.run_id }}
+          restore-keys: ccache-
 
-      - name: ⚙️ Setup Clang
+      - name: Clone kernel source
         run: |
-          if [ "${{ inputs.TOOLCHAIN }}" = "proton" ]; then
-            git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
-          else
-            git clone --depth=1 https://github.com/Neutron-Toolchains/clang clang
-          fi
+          git clone --depth=1 \
+            -b "${{ inputs.kernel_branch }}" \
+            "${{ inputs.kernel_source }}" kernel
 
+      - name: Setup Proton Clang (default)
+        run: |
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
           echo "PATH=$PWD/clang/bin:$PATH" >> $GITHUB_ENV
-          echo "CC=ccache clang" >> $GITHUB_ENV
-          echo "LD=ld.lld" >> $GITHUB_ENV
-          echo "AR=llvm-ar" >> $GITHUB_ENV
-          echo "NM=llvm-nm" >> $GITHUB_ENV
-          echo "OBJCOPY=llvm-objcopy" >> $GITHUB_ENV
-          echo "STRIP=llvm-strip" >> $GITHUB_ENV
-          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
-          echo "CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> $GITHUB_ENV
+          clang --version
 
-      - name: 🔍 Detect GKI / Non-GKI
+      - name: Setup mkbootimg
         run: |
-          cd kernel
-          if [ "${{ inputs.FORCE_GKI }}" = "true" ]; then
-            echo "KERNEL_TYPE=GKI" >> $GITHUB_ENV
-          elif [ -d common ] || grep -qr "gki_defconfig" arch/arm64/configs; then
-            echo "KERNEL_TYPE=GKI" >> $GITHUB_ENV
-          else
-            echo "KERNEL_TYPE=NON-GKI" >> $GITHUB_ENV
-          fi
+          git clone https://github.com/osm0sis/mkbootimg tools/mkbootimg
+          chmod +x tools/mkbootimg/mkbootimg.py
 
-      - name: 🔐 KernelSU-Next
-        if: ${{ inputs.KERNELSU_NEXT == 'true' }}
+      - name: KernelSU-Next (optional)
+        if: ${{ inputs.enable_ksu_next == 'true' }}
         run: |
           cd kernel
           curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
-          if [ "${{ inputs.SUSFS }}" = "true" ]; then
+          if [ "${{ inputs.enable_susfs }}" = "true" ]; then
             scripts/config --enable CONFIG_KSU_SUSFS
           fi
 
-      - name: ⚙️ Configure kernel
+      - name: Configure kernel
         run: |
           cd kernel
-          mkdir -p out
-          make O=out ${{ inputs.DEFCONFIG }}
+          mkdir -p $OUT
+          make O=$OUT "${{ inputs.defconfig }}"
 
-      - name: 🛑 vdso32 safe fix
-        run: |
-          cd kernel
-          if grep -q CONFIG_COMPAT_VDSO=y out/.config; then
-            echo "⚠️ Disabling vdso32"
-            scripts/config --file out/.config \
-              -d CONFIG_COMPAT_VDSO \
-              -d CONFIG_ARM64_VDSO32
-            make O=out olddefconfig
+          # vdso32 auto-fix (universal safe)
+          if grep -q CONFIG_COMPAT_VDSO=y $OUT/.config; then
+            echo "⚠️ COMPAT_VDSO detected, disabling vdso32"
+            scripts/config --file $OUT/.config -d CONFIG_COMPAT_VDSO
+            make O=$OUT olddefconfig
           fi
 
-      - name: 🏗️ Build kernel
+      - name: Build kernel
         run: |
           cd kernel
           set -o pipefail
-          make -j$(nproc) O=out \
-            LLVM=1 LLVM_IAS=1 \
-            KCFLAGS=-Wno-error \
-            2>&1 | tee build.log
+          make -j$(nproc) O=$OUT \
+            CC="ccache clang" \
+            LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            STRIP=llvm-strip OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            KCFLAGS="-Wno-error" \
+            2>&1 | tee build.log || (mv build.log error.log && exit 1)
 
-      - name: 📦 AnyKernel3 (OTA-ready)
+      - name: Build boot.img (header v3 safe)
         run: |
-          git clone https://github.com/osm0sis/AnyKernel3 anykernel
-          cp kernel/out/arch/arm64/boot/Image anykernel/
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel/anykernel.sh
-
-      - name: 📦 Create ZIP
-        run: |
-          cd anykernel
-          zip -r9 ../AnyKernel-${{ inputs.CODENAME }}.zip *
-          cd ..
-
-      - name: 📱 Build boot.img
-        run: |
-          mkbootimg \
-            --kernel kernel/out/arch/arm64/boot/Image \
+          cd kernel
+          python3 ../tools/mkbootimg/mkbootimg.py \
+            --kernel $OUT/arch/arm64/boot/Image \
             --header_version 3 \
-            -o boot.img
+            --output boot.img
 
-      - name: ⬆️ Upload artifacts
+      - name: AnyKernel3 (OTA ready)
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3.git anykernel
+          cp kernel/boot.img anykernel/
+          cd anykernel
+          zip -r Kernel-${{ inputs.codename }}.zip .
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-${{ inputs.CODENAME }}
+          name: Kernel-${{ inputs.codename }}
           path: |
-            AnyKernel-*.zip
-            boot.img
             kernel/build.log
+            kernel/error.log
+            kernel/boot.img
+            anykernel/Kernel-*.zip
+
+      - name: Telegram notification
+        if: ${{ inputs.telegram_notify == 'true' }}
+        run: |
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
+            -d chat_id=${{ secrets.TG_CHAT_ID }} \
+            -d text="✅ Kernel build finished for *${{ inputs.codename }}*" \
+            -d parse_mode=Markdown \
+            -d reply_markup='{
+              "inline_keyboard":[
+                [{"text":"⬇️ Download Artifacts","url":"'"$RUN_URL"'"}]
+              ]
+            }'
