@@ -68,7 +68,7 @@ for bin in $(find install -mindepth 2 -maxdepth 3 -type f -exec file {} \; | gre
 done
 
 # Git config
-wget https://raw.githubusercontent.com/Carlotta-Montelli/Android-CI/main/Common/Git-Config.sh
+wget https://raw.githubusercontent.com/evrahimkhan/Android-CI-builder/main/Common/Git-Config.sh
 bash Git-Config.sh
 
 # Release Info
