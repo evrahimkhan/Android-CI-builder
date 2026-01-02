@@ -4,16 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       codename:
-        description: Device codename (e.g. stone)
+        description: Device codename
         required: true
       kernel_repo:
-        description: Kernel source git URL
+        description: Kernel source repo URL
         required: true
       kernel_branch:
         description: Kernel branch
         required: true
       defconfig:
-        description: Kernel defconfig (e.g. stone_defconfig)
+        description: Kernel defconfig
         required: true
       enable_kernelsu:
         description: Enable KernelSU-Next (true/false)
@@ -39,7 +39,7 @@ jobs:
           sudo apt install -y \
             bc bison flex build-essential \
             libssl-dev libelf-dev \
-            python3 git curl zip unzip rsync
+            python3 git curl zip unzip
 
       - name: Clone Proton Clang
         run: |
@@ -66,21 +66,6 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 "${{ github.event.inputs.defconfig }}"
           make -j$(nproc) O=out ARCH=arm64 LLVM=1 2>&1 | tee build.log
 
-      - name: Extract kernel info
-        run: |
-          cd kernel
-          echo "KERNEL_VER=$(strings out/vmlinux | grep 'Linux version' | head -n1)" >> $GITHUB_ENV
-          echo "CLANG_VER=$(clang --version | head -n1)" >> $GITHUB_ENV
-
-      - name: Detect GKI
-        run: |
-          cd kernel
-          if grep -q CONFIG_GKI=y out/.config; then
-            echo "KERNEL_TYPE=GKI" >> $GITHUB_ENV
-          else
-            echo "KERNEL_TYPE=NON-GKI" >> $GITHUB_ENV
-          fi
-
       - name: Prepare AnyKernel3 ZIP
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 anykernel
@@ -88,14 +73,9 @@ jobs:
           cd anykernel
           zip -r9 "../AnyKernel3-${{ github.event.inputs.codename }}.zip" *
 
-      - name: Setup mkbootimg
-        run: |
-          git clone --depth=1 \
-            https://android.googlesource.com/platform/system/tools/mkbootimg \
-            tools/mkbootimg
-
       - name: Build boot.img
         run: |
+          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
           python3 tools/mkbootimg/mkbootimg.py \
             --kernel kernel/out/arch/arm64/boot/Image \
             --header_version 4 \
@@ -105,31 +85,12 @@ jobs:
             --header_version 3 \
             -o boot.img
 
-      - name: GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: "${{ github.event.inputs.codename }}-${{ github.run_number }}"
-          name: "Kernel ${{ github.event.inputs.codename }}"
-          files: |
-            AnyKernel3-${{ github.event.inputs.codename }}.zip
-            boot.img
-            kernel/build.log
-
       - name: Telegram SUCCESS
         if: success()
         run: |
           curl -s -X POST https://api.telegram.org/bot${TG_TOKEN}/sendMessage \
             -d chat_id=${TG_CHAT_ID} \
-            -d text="$(cat <<'EOF'
-✅ Kernel build SUCCESS
-
-Device: ${{ github.event.inputs.codename }}
-Type: ${KERNEL_TYPE}
-
-${KERNEL_VER}
-${CLANG_VER}
-EOF
-)"
+            -d text="✅ Kernel build SUCCESS | Device=${{ github.event.inputs.codename }}"
 
           curl -s -F chat_id=${TG_CHAT_ID} \
             -F document=@AnyKernel3-${{ github.event.inputs.codename }}.zip \
@@ -144,12 +105,7 @@ EOF
         run: |
           curl -s -X POST https://api.telegram.org/bot${TG_TOKEN}/sendMessage \
             -d chat_id=${TG_CHAT_ID} \
-            -d text="$(cat <<'EOF'
-❌ Kernel build FAILED
-
-Device: ${{ github.event.inputs.codename }}
-EOF
-)"
+            -d text="❌ Kernel build FAILED | Device=${{ github.event.inputs.codename }}"
 
           curl -s -F chat_id=${TG_CHAT_ID} \
             -F document=@kernel/build.log \
