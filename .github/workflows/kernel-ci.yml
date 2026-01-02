@@ -4,111 +4,105 @@ on:
   workflow_dispatch:
     inputs:
       device:
-        description: Device codename (e.g. stone)
+        description: "Device codename (e.g. stone)"
         required: true
+        default: "stone"
       defconfig:
-        description: Kernel defconfig (e.g. stone_defconfig)
+        description: "Kernel defconfig (e.g. stone_defconfig)"
         required: true
-      kernel_source:
-        description: Kernel source git link
-        required: true
-      kernel_branch:
-        description: Kernel branch
-        required: true
+        default: "stone_defconfig"
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
-    env:
-      TG_TOKEN: ${{ secrets.TG_TOKEN }}
-      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+    runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout CI repo
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Clone kernel source
-        run: |
-          git clone --depth=1 -b "${{ inputs.kernel_branch }}" \
-            "${{ inputs.kernel_source }}" kernel
-
-      # ---------- Telegram start ----------
-      - name: Telegram build started
-        run: |
-          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d "chat_id=${TG_CHAT_ID}" \
-            -d "text=🚀 Kernel build started | Device: ${{ inputs.device }} | Branch: ${{ inputs.kernel_branch }}"
-
-      # ---------- Dependencies ----------
       - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y \
-            bc bison flex build-essential \
+            git curl bc bison flex \
+            build-essential \
             libssl-dev libelf-dev \
-            clang lld git curl
+            python3 python3-pip \
+            ccache
 
-      # ---------- Build ----------
+      - name: Clone Proton Clang
+        run: |
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+
+      - name: Setup environment
+        run: |
+          echo "PATH=$PWD/clang/bin:$PATH" >> $GITHUB_ENV
+          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+
       - name: Build kernel
+        id: build
         run: |
           set -e
           cd kernel
-          make O=out ARCH=arm64 ${{ inputs.defconfig }}
+
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export LLVM=1
+          export LLVM_IAS=1
+
+          make O=out ${{ inputs.defconfig }}
+
           make -j$(nproc) \
             O=out \
-            ARCH=arm64 \
             CC=clang \
             LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            STRIP=llvm-strip \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
             2>&1 | tee build.log
 
-      # ---------- Kernel info ----------
+          cp out/arch/arm64/boot/Image ../Image
+
       - name: Extract kernel info
+        run: |
+          strings Image | grep -m1 "Linux version" > kernel_info.txt || true
+
+      - name: AnyKernel3 packaging
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ak3
+          cp Image ak3/Image
+          cd ak3
+          zip -r9 ../AnyKernel3-${{ inputs.device }}.zip *
+
+      - name: Telegram success
         if: success()
         run: |
-          cd kernel
-          strings out/vmlinux | grep "Linux version" | head -n 1 > ../kernel_info.txt
-          clang --version | head -n 1 >> ../kernel_info.txt
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
+            -d chat_id=${{ secrets.TG_CHAT_ID }} \
+            -d text="✅ Kernel build SUCCESS
+Device: ${{ inputs.device }}
+Defconfig: ${{ inputs.defconfig }}"
 
-      # ---------- Success ----------
-      - name: Telegram success message
-        if: success()
-        run: |
-          INFO=$(cat kernel_info.txt)
-          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d "chat_id=${TG_CHAT_ID}" \
-            -d "text=✅ Kernel build SUCCESS | Device: ${{ inputs.device }} | ${INFO}"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument" \
+            -F chat_id=${{ secrets.TG_CHAT_ID }} \
+            -F document=@AnyKernel3-${{ inputs.device }}.zip
 
-      - name: Telegram upload Image
-        if: success()
-        run: |
-          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
-            -F "chat_id=${TG_CHAT_ID}" \
-            -F "document=@kernel/out/arch/arm64/boot/Image" \
-            -F "caption=📦 Kernel Image"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument" \
+            -F chat_id=${{ secrets.TG_CHAT_ID }} \
+            -F document=@build.log
 
-      - name: Telegram upload build log
-        if: success()
-        run: |
-          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
-            -F "chat_id=${TG_CHAT_ID}" \
-            -F "document=@kernel/build.log" \
-            -F "caption=📄 build.log"
-
-      # ---------- Failure ----------
-      - name: Telegram failure message
+      - name: Telegram failure
         if: failure()
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d "chat_id=${TG_CHAT_ID}" \
-            -d "text=❌ Kernel build FAILED | Device: ${{ inputs.device }}"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
+            -d chat_id=${{ secrets.TG_CHAT_ID }} \
+            -d text="❌ Kernel build FAILED
+Device: ${{ inputs.device }}
+Check build.log"
 
-      - name: Telegram upload error log
-        if: failure()
-        run: |
-          if [ -f kernel/build.log ]; then
-            curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
-              -F "chat_id=${TG_CHAT_ID}" \
-              -F "document=@kernel/build.log" \
-              -F "caption=❄️ error.log"
-          fi
+          [ -f kernel/build.log ] && \
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument" \
+            -F chat_id=${{ secrets.TG_CHAT_ID }} \
+            -F document=@kernel/build.log
