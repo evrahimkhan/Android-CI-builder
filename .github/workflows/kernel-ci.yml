@@ -22,10 +22,10 @@ jobs:
       CCACHE_DIR: $HOME/.ccache
 
     steps:
-      - name: Checkout source
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
           sudo apt update
           sudo apt install -y \
@@ -48,15 +48,14 @@ jobs:
           echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
           echo "CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> $GITHUB_ENV
 
-      - name: Kernel build
-        id: build
+      - name: Build kernel
         run: |
           set -o pipefail
           mkdir -p out
           make O=out ${{ github.event.inputs.defconfig }}
           make -j$(nproc) O=out 2>&1 | tee build.log
 
-      - name: Detect kernel type (GKI / NON-GKI)
+      - name: Detect GKI
         run: |
           if grep -q "CONFIG_GKI=y" out/.config; then
             echo "KERNEL_TYPE=GKI" >> $GITHUB_ENV
@@ -67,31 +66,31 @@ jobs:
       - name: Extract kernel info
         run: |
           KVER=$(strings out/arch/arm64/boot/Image | grep -m1 "Linux version" || true)
-          CLANG_VER=$(clang --version | head -n1)
+          CLANGV=$(clang --version | head -n1)
           echo "KERNEL_VERSION=$KVER" >> $GITHUB_ENV
-          echo "CLANG_VERSION=$CLANG_VER" >> $GITHUB_ENV
+          echo "CLANG_VERSION=$CLANGV" >> $GITHUB_ENV
 
-      - name: Build boot.img (auto v3/v4)
+      - name: Build boot.img
         run: |
           git clone https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
           python3 tools/mkbootimg/mkbootimg.py \
             --kernel out/arch/arm64/boot/Image \
             --output boot.img
 
-      - name: Build AnyKernel3 ZIP
+      - name: Build AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3 anykernel
           cp out/arch/arm64/boot/Image anykernel/
           cd anykernel
           zip -r9 ../AnyKernel3-${{ github.event.inputs.codename }}.zip *
 
-      - name: Collect error log
+      - name: Prepare error log
         if: failure()
         run: |
           echo "Kernel build failed" > error.log
           tail -n 200 build.log >> error.log || true
 
-      - name: Create GitHub Release
+      - name: GitHub Release
         if: success() || failure()
         uses: softprops/action-gh-release@v2
         with:
@@ -105,8 +104,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ================= TELEGRAM =================
-
+      # ================= TELEGRAM SUCCESS =================
       - name: Telegram SUCCESS
         if: success()
         run: |
@@ -119,25 +117,29 @@ jobs:
           BOOT_URL="https://github.com/$REPO/releases/download/$TAG/boot.img"
           LOG_URL="https://github.com/$REPO/releases/download/$TAG/build.log"
 
+          cat <<EOF > payload.json
+          {
+            "chat_id": "$CHAT",
+            "text": "✅ Kernel Build Success\n\n📱 Device: ${{ github.event.inputs.codename }}\n🧩 Type: $KERNEL_TYPE\n\n🐧 $KERNEL_VERSION\n🧰 $CLANG_VERSION",
+            "reply_markup": {
+              "inline_keyboard": [
+                [{"text":"⬇️ AnyKernel ZIP","url":"$ZIP_URL"}],
+                [{"text":"⬇️ boot.img","url":"$BOOT_URL"}],
+                [{"text":"⬇️ build.log","url":"$LOG_URL"}]
+              ]
+            }
+          }
+          EOF
+
           curl -s -X POST "$TG/sendMessage" \
-            -d chat_id="$CHAT" \
-            -d text="✅ Kernel Build Success
-
-📱 Device: ${{ github.event.inputs.codename }}
-🧩 Type: $KERNEL_TYPE
-
-🐧 $KERNEL_VERSION
-🧰 $CLANG_VERSION" \
-            -d reply_markup="{\"inline_keyboard\":[
-              [{\"text\":\"⬇️ AnyKernel ZIP\",\"url\":\"$ZIP_URL\"}],
-              [{\"text\":\"⬇️ boot.img\",\"url\":\"$BOOT_URL\"}],
-              [{\"text\":\"⬇️ build.log\",\"url\":\"$LOG_URL\"}]
-            ]}"
+            -H "Content-Type: application/json" \
+            -d @payload.json
 
           curl -s -F chat_id="$CHAT" -F document=@AnyKernel3-${{ github.event.inputs.codename }}.zip "$TG/sendDocument"
           curl -s -F chat_id="$CHAT" -F document=@boot.img "$TG/sendDocument"
           curl -s -F chat_id="$CHAT" -F document=@build.log "$TG/sendDocument"
 
+      # ================= TELEGRAM FAILURE =================
       - name: Telegram FAILURE
         if: failure()
         run: |
@@ -148,14 +150,20 @@ jobs:
 
           ERR_URL="https://github.com/$REPO/releases/download/$TAG/error.log"
 
-          curl -s -X POST "$TG/sendMessage" \
-            -d chat_id="$CHAT" \
-            -d text="❌ Kernel Build Failed
+          cat <<EOF > payload.json
+          {
+            "chat_id": "$CHAT",
+            "text": "❌ Kernel Build Failed\n\n📱 Device: ${{ github.event.inputs.codename }}\n🧩 Type: $KERNEL_TYPE",
+            "reply_markup": {
+              "inline_keyboard": [
+                [{"text":"⬇️ error.log","url":"$ERR_URL"}]
+              ]
+            }
+          }
+          EOF
 
-📱 Device: ${{ github.event.inputs.codename }}
-🧩 Type: $KERNEL_TYPE" \
-            -d reply_markup="{\"inline_keyboard\":[
-              [{\"text\":\"⬇️ error.log\",\"url\":\"$ERR_URL\"}]
-            ]}"
+          curl -s -X POST "$TG/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d @payload.json
 
           curl -s -F chat_id="$CHAT" -F document=@error.log "$TG/sendDocument"
