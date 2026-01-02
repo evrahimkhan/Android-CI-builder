@@ -3,110 +3,121 @@ name: Android Kernel CI
 on:
   workflow_dispatch:
     inputs:
-      codename:
-        description: Device codename
-        required: true
-      kernel_repo:
-        description: Kernel source repo URL
-        required: true
-      kernel_branch:
-        description: Kernel branch
+      device:
+        description: "Device codename (e.g. stone)"
         required: true
       defconfig:
-        description: Kernel defconfig
+        description: "Kernel defconfig (e.g. stone_defconfig)"
         required: true
-      enable_kernelsu:
-        description: Enable KernelSU-Next (true/false)
-        required: false
-        default: "false"
+      kernel_source:
+        description: "Kernel source git link"
+        required: true
+      kernel_branch:
+        description: "Kernel branch"
+        required: true
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     env:
-      ARCH: arm64
-      SUBARCH: arm64
-      LLVM: "1"
+      TG_TOKEN: ${{ secrets.TG_TOKEN }}
+      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
 
     steps:
       - name: Checkout CI repo
         uses: actions/checkout@v4
 
+      - name: Clone kernel source
+        run: |
+          git clone --depth=1 -b "${{ inputs.kernel_branch }}" \
+            "${{ inputs.kernel_source }}" kernel
+
+      # ---------------- TELEGRAM START ----------------
+      - name: Telegram Build Started
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT_ID}" \
+            -d text="🚀 Kernel build started
+📱 Device: ${{ inputs.device }}
+🌿 Branch: ${{ inputs.kernel_branch }}"
+
+      # ---------------- TOOLCHAIN ----------------
       - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y \
-            bc bison flex build-essential \
+            build-essential bc bison flex \
             libssl-dev libelf-dev \
-            python3 git curl zip unzip
+            clang lld git curl
 
-      - name: Clone Proton Clang
-        run: |
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
-          echo "$PWD/clang/bin" >> $GITHUB_PATH
-
-      - name: Clone kernel source
-        run: |
-          git clone --depth=1 \
-            -b "${{ github.event.inputs.kernel_branch }}" \
-            "${{ github.event.inputs.kernel_repo }}" kernel
-
-      - name: Enable KernelSU-Next
-        if: ${{ github.event.inputs.enable_kernelsu == 'true' }}
-        run: |
-          cd kernel
-          curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
-
+      # ---------------- BUILD ----------------
       - name: Build kernel
         run: |
           set -e
           cd kernel
-          mkdir -p out
-          make O=out ARCH=arm64 LLVM=1 "${{ github.event.inputs.defconfig }}"
-          make -j$(nproc) O=out ARCH=arm64 LLVM=1 2>&1 | tee build.log
 
-      - name: Prepare AnyKernel3 ZIP
-        run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 anykernel
-          cp kernel/out/arch/arm64/boot/Image anykernel/
-          cd anykernel
-          zip -r9 "../AnyKernel3-${{ github.event.inputs.codename }}.zip" *
+          make O=out ARCH=arm64 ${{ inputs.defconfig }}
 
-      - name: Build boot.img
-        run: |
-          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
-          python3 tools/mkbootimg/mkbootimg.py \
-            --kernel kernel/out/arch/arm64/boot/Image \
-            --header_version 4 \
-            -o boot.img || \
-          python3 tools/mkbootimg/mkbootimg.py \
-            --kernel kernel/out/arch/arm64/boot/Image \
-            --header_version 3 \
-            -o boot.img
+          make -j$(nproc) \
+            O=out \
+            ARCH=arm64 \
+            CC=clang \
+            LD=ld.lld \
+            2>&1 | tee build.log
 
-      - name: Telegram SUCCESS
+      # ---------------- KERNEL INFO ----------------
+      - name: Extract kernel info
         if: success()
         run: |
-          curl -s -X POST https://api.telegram.org/bot${TG_TOKEN}/sendMessage \
-            -d chat_id=${TG_CHAT_ID} \
-            -d text="✅ Kernel build SUCCESS | Device=${{ github.event.inputs.codename }}"
+          cd kernel
+          strings out/vmlinux | grep "Linux version" | head -n 1 > ../kernel_info.txt
+          clang --version | head -n 1 >> ../kernel_info.txt
 
-          curl -s -F chat_id=${TG_CHAT_ID} \
-            -F document=@AnyKernel3-${{ github.event.inputs.codename }}.zip \
-            https://api.telegram.org/bot${TG_TOKEN}/sendDocument
+      # ---------------- SUCCESS ----------------
+      - name: Telegram Success Message
+        if: success()
+        run: |
+          INFO=$(cat kernel_info.txt)
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT_ID}" \
+            -d text="✅ Kernel build SUCCESS
+📱 Device: ${{ inputs.device }}
 
-          curl -s -F chat_id=${TG_CHAT_ID} \
-            -F document=@boot.img \
-            https://api.telegram.org/bot${TG_TOKEN}/sendDocument
+ℹ️ Kernel info:
+$INFO"
 
-      - name: Telegram FAILURE
+      - name: Telegram Upload Kernel Image
+        if: success()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
+            -F chat_id="${TG_CHAT_ID}" \
+            -F document=@kernel/out/arch/arm64/boot/Image \
+            -F caption="📦 Kernel Image"
+
+      - name: Telegram Upload Build Log
+        if: success()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
+            -F chat_id="${TG_CHAT_ID}" \
+            -F document=@kernel/build.log \
+            -F caption="📄 build.log"
+
+      # ---------------- FAILURE ----------------
+      - name: Telegram Failure Message
         if: failure()
         run: |
-          curl -s -X POST https://api.telegram.org/bot${TG_TOKEN}/sendMessage \
-            -d chat_id=${TG_CHAT_ID} \
-            -d text="❌ Kernel build FAILED | Device=${{ github.event.inputs.codename }}"
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT_ID}" \
+            -d text="❌ Kernel build FAILED
+📱 Device: ${{ inputs.device }}"
 
-          curl -s -F chat_id=${TG_CHAT_ID} \
-            -F document=@kernel/build.log \
-            https://api.telegram.org/bot${TG_TOKEN}/sendDocument
+      - name: Telegram Upload Error Log
+        if: failure()
+        run: |
+          if [ -f kernel/build.log ]; then
+            curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
+              -F chat_id="${TG_CHAT_ID}" \
+              -F document=@kernel/build.log \
+              -F caption="❄️ error.log"
+          fi
