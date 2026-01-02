@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout repo
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Install dependencies
@@ -27,20 +27,18 @@ jobs:
             git curl bc bison flex \
             build-essential \
             libssl-dev libelf-dev \
-            python3 python3-pip \
-            ccache
+            python3 ccache
 
       - name: Clone Proton Clang
         run: |
           git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-      - name: Setup environment
+      - name: Setup build environment
         run: |
           echo "PATH=$PWD/clang/bin:$PATH" >> $GITHUB_ENV
           echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
 
       - name: Build kernel
-        id: build
         run: |
           set -e
           cd kernel
@@ -81,9 +79,12 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
             -d chat_id=${{ secrets.TG_CHAT_ID }} \
-            -d text="✅ Kernel build SUCCESS
+            -d text="$(cat << 'EOF'
+✅ Kernel build SUCCESS
 Device: ${{ inputs.device }}
-Defconfig: ${{ inputs.defconfig }}"
+Defconfig: ${{ inputs.defconfig }}
+EOF
+)"
 
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument" \
             -F chat_id=${{ secrets.TG_CHAT_ID }} \
@@ -91,18 +92,17 @@ Defconfig: ${{ inputs.defconfig }}"
 
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument" \
             -F chat_id=${{ secrets.TG_CHAT_ID }} \
-            -F document=@build.log
+            -F document=@kernel/build.log
 
       - name: Telegram failure
         if: failure()
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
             -d chat_id=${{ secrets.TG_CHAT_ID }} \
-            -d text="❌ Kernel build FAILED
-Device: ${{ inputs.device }}
-Check build.log"
+            -d text="❌ Kernel build FAILED for ${{ inputs.device }}"
 
-          [ -f kernel/build.log ] && \
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument" \
-            -F chat_id=${{ secrets.TG_CHAT_ID }} \
-            -F document=@kernel/build.log
+          if [ -f kernel/build.log ]; then
+            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument" \
+              -F chat_id=${{ secrets.TG_CHAT_ID }} \
+              -F document=@kernel/build.log
+          fi
