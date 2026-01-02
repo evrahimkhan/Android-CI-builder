@@ -4,16 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       device:
-        description: "Device codename (e.g. stone)"
+        description: Device codename (e.g. stone)
         required: true
       defconfig:
-        description: "Kernel defconfig (e.g. stone_defconfig)"
+        description: Kernel defconfig (e.g. stone_defconfig)
         required: true
       kernel_source:
-        description: "Kernel source git link"
+        description: Kernel source git link
         required: true
       kernel_branch:
-        description: "Kernel branch"
+        description: Kernel branch
         required: true
 
 jobs:
@@ -33,32 +33,28 @@ jobs:
           git clone --depth=1 -b "${{ inputs.kernel_branch }}" \
             "${{ inputs.kernel_source }}" kernel
 
-      # ---------------- TELEGRAM START ----------------
-      - name: Telegram Build Started
+      # ---------- Telegram start ----------
+      - name: Telegram build started
         run: |
           curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT_ID}" \
-            -d text="🚀 Kernel build started
-📱 Device: ${{ inputs.device }}
-🌿 Branch: ${{ inputs.kernel_branch }}"
+            -d "chat_id=${TG_CHAT_ID}" \
+            -d "text=🚀 Kernel build started | Device: ${{ inputs.device }} | Branch: ${{ inputs.kernel_branch }}"
 
-      # ---------------- TOOLCHAIN ----------------
+      # ---------- Dependencies ----------
       - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y \
-            build-essential bc bison flex \
+            bc bison flex build-essential \
             libssl-dev libelf-dev \
             clang lld git curl
 
-      # ---------------- BUILD ----------------
+      # ---------- Build ----------
       - name: Build kernel
         run: |
           set -e
           cd kernel
-
           make O=out ARCH=arm64 ${{ inputs.defconfig }}
-
           make -j$(nproc) \
             O=out \
             ARCH=arm64 \
@@ -66,7 +62,7 @@ jobs:
             LD=ld.lld \
             2>&1 | tee build.log
 
-      # ---------------- KERNEL INFO ----------------
+      # ---------- Kernel info ----------
       - name: Extract kernel info
         if: success()
         run: |
@@ -74,50 +70,45 @@ jobs:
           strings out/vmlinux | grep "Linux version" | head -n 1 > ../kernel_info.txt
           clang --version | head -n 1 >> ../kernel_info.txt
 
-      # ---------------- SUCCESS ----------------
-      - name: Telegram Success Message
+      # ---------- Success ----------
+      - name: Telegram success message
         if: success()
         run: |
           INFO=$(cat kernel_info.txt)
           curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT_ID}" \
-            -d text="✅ Kernel build SUCCESS
-📱 Device: ${{ inputs.device }}
+            -d "chat_id=${TG_CHAT_ID}" \
+            -d "text=✅ Kernel build SUCCESS | Device: ${{ inputs.device }} | ${INFO}"
 
-ℹ️ Kernel info:
-$INFO"
-
-      - name: Telegram Upload Kernel Image
+      - name: Telegram upload Image
         if: success()
         run: |
           curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
-            -F chat_id="${TG_CHAT_ID}" \
-            -F document=@kernel/out/arch/arm64/boot/Image \
-            -F caption="📦 Kernel Image"
+            -F "chat_id=${TG_CHAT_ID}" \
+            -F "document=@kernel/out/arch/arm64/boot/Image" \
+            -F "caption=📦 Kernel Image"
 
-      - name: Telegram Upload Build Log
+      - name: Telegram upload build log
         if: success()
         run: |
           curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
-            -F chat_id="${TG_CHAT_ID}" \
-            -F document=@kernel/build.log \
-            -F caption="📄 build.log"
+            -F "chat_id=${TG_CHAT_ID}" \
+            -F "document=@kernel/build.log" \
+            -F "caption=📄 build.log"
 
-      # ---------------- FAILURE ----------------
-      - name: Telegram Failure Message
+      # ---------- Failure ----------
+      - name: Telegram failure message
         if: failure()
         run: |
           curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT_ID}" \
-            -d text="❌ Kernel build FAILED
-📱 Device: ${{ inputs.device }}"
+            -d "chat_id=${TG_CHAT_ID}" \
+            -d "text=❌ Kernel build FAILED | Device: ${{ inputs.device }}"
 
-      - name: Telegram Upload Error Log
+      - name: Telegram upload error log
         if: failure()
         run: |
           if [ -f kernel/build.log ]; then
             curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
-              -F chat_id="${TG_CHAT_ID}" \
-              -F document=@kernel/build.log \
-              -F caption="❄️ error.log"
+              -F "chat_id=${TG_CHAT_ID}" \
+              -F "document=@kernel/build.log" \
+              -F "caption=❄️ error.log"
           fi
