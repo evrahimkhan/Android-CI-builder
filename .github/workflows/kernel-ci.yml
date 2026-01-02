@@ -1,4 +1,4 @@
-name: Android Kernel CI (Layer-4 Final)
+name: Android Kernel CI (Final Stable)
 
 on:
   workflow_dispatch:
@@ -21,14 +21,17 @@ on:
         required: true
         default: "false"
         type: choice
-        options: ["true", "false"]
+        options:
+          - "true"
+          - "false"
 
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout CI repo
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -50,13 +53,13 @@ jobs:
           git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
           echo "$PWD/clang/bin" >> $GITHUB_PATH
 
-      - name: KernelSU-Next
+      - name: Apply KernelSU-Next
         if: ${{ inputs.kernelsu_next == 'true' }}
         run: |
           cd kernel
           curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
 
-      - name: Configure kernel
+      - name: Kernel config
         run: |
           cd kernel
           export ARCH=arm64
@@ -68,74 +71,67 @@ jobs:
 
       - name: Build kernel
         run: |
-          set -o pipefail
           cd kernel
           make O=out -j$(nproc) Image 2>&1 | tee build.log
 
       - name: Extract kernel info
         run: |
-          cd kernel
-          strings out/arch/arm64/boot/Image | grep "Linux version" | head -n1 > ../kinfo.txt
-          clang --version | head -n1 >> ../kinfo.txt
-          if grep -q GKI out/.config; then
+          strings kernel/out/arch/arm64/boot/Image | \
+            grep "Linux version" | head -n1 > kinfo.txt
+          clang --version | head -n1 >> kinfo.txt
+
+          if grep -q CONFIG_GKI kernel/out/.config; then
             echo "KTYPE=GKI" >> $GITHUB_ENV
           else
             echo "KTYPE=NON-GKI" >> $GITHUB_ENV
           fi
 
-      - name: Prepare AnyKernel3
+      - name: Prepare AnyKernel3 ZIP
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ak3
           cp kernel/out/arch/arm64/boot/Image ak3/
           zip -r9 AnyKernel3-${{ inputs.device }}.zip ak3
 
-      - name: Create boot.img (if possible)
+      - name: Prepare boot.img
         run: |
-          if [ -f kernel/out/arch/arm64/boot/Image ]; then
-            cp kernel/out/arch/arm64/boot/Image boot.img
-          fi
+          cp kernel/out/arch/arm64/boot/Image boot.img
 
-      - name: Generate release tag
+      - name: Generate tag
         id: tag
         run: |
-          TAG="${{ inputs.device }}-$(date +%Y%m%d)-${GITHUB_SHA::7}"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
+          TAG="${{ inputs.device }}-$(date +%Y%m%d)-${SHORT_SHA}"
+          echo "TAG=$TAG" >> $GITHUB_ENV
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: "Kernel ${{ inputs.device }} | ${{ steps.tag.outputs.tag }}"
+          tag_name: ${{ env.TAG }}
+          name: "Kernel ${{ inputs.device }} | ${{ env.TAG }}"
           files: |
             AnyKernel3-${{ inputs.device }}.zip
             boot.img
 
-      - name: Telegram SUCCESS (Release files)
+      - name: Telegram SUCCESS
         if: success()
         env:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
-          MSG="✅ Kernel Build SUCCESS
-📱 Device: ${{ inputs.device }}
-🧩 Type: $KTYPE
-🏷 Tag: ${{ steps.tag.outputs.tag }}
-
-$(cat kinfo.txt)"
-
           curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             -F chat_id="${TG_CHAT_ID}" \
-            -F text="$MSG"
+            -F text="✅ Kernel Build SUCCESS
+Device: ${{ inputs.device }}
+Type: $KTYPE
+Tag: $TAG"
 
           curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
             -F chat_id="${TG_CHAT_ID}" \
             -F document=@AnyKernel3-${{ inputs.device }}.zip
 
-          if [ -f boot.img ]; then
-            curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
-              -F chat_id="${TG_CHAT_ID}" \
-              -F document=@boot.img
-          fi
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
+            -F chat_id="${TG_CHAT_ID}" \
+            -F document=@boot.img
 
       - name: Telegram FAILURE
         if: failure()
