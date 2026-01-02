@@ -1,18 +1,18 @@
-name: Android Kernel CI (Final Stable)
+name: Android Kernel CI (Stable Final)
 
 on:
   workflow_dispatch:
     inputs:
       device:
-        description: "Device codename (e.g. stone)"
+        description: "Device codename"
         required: true
       kernel_source:
-        description: "Kernel source git URL"
+        description: "Kernel source URL"
         required: true
       kernel_branch:
         description: "Kernel branch"
         required: true
-        default: "main"
+        default: main
       defconfig:
         description: "Kernel defconfig"
         required: true
@@ -30,19 +30,15 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout CI repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
           sudo apt update
-          sudo apt install -y \
-            git bc bison flex \
-            libssl-dev ccache \
-            python3 curl unzip \
-            build-essential
+          sudo apt install -y git bc bison flex libssl-dev \
+            build-essential curl unzip python3 ccache
 
-      - name: Clone kernel source
+      - name: Clone kernel
         run: |
           git clone --depth=1 \
             -b "${{ inputs.kernel_branch }}" \
@@ -53,13 +49,13 @@ jobs:
           git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
           echo "$PWD/clang/bin" >> $GITHUB_PATH
 
-      - name: Apply KernelSU-Next
+      - name: KernelSU-Next
         if: ${{ inputs.kernelsu_next == 'true' }}
         run: |
           cd kernel
           curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
 
-      - name: Kernel config
+      - name: Configure kernel
         run: |
           cd kernel
           export ARCH=arm64
@@ -74,40 +70,33 @@ jobs:
           cd kernel
           make O=out -j$(nproc) Image 2>&1 | tee build.log
 
-      - name: Extract kernel info
+      - name: Detect kernel type
         run: |
-          strings kernel/out/arch/arm64/boot/Image | \
-            grep "Linux version" | head -n1 > kinfo.txt
-          clang --version | head -n1 >> kinfo.txt
-
           if grep -q CONFIG_GKI kernel/out/.config; then
             echo "KTYPE=GKI" >> $GITHUB_ENV
           else
             echo "KTYPE=NON-GKI" >> $GITHUB_ENV
           fi
 
-      - name: Prepare AnyKernel3 ZIP
+      - name: AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ak3
           cp kernel/out/arch/arm64/boot/Image ak3/
           zip -r9 AnyKernel3-${{ inputs.device }}.zip ak3
 
-      - name: Prepare boot.img
+      - name: boot.img
         run: |
           cp kernel/out/arch/arm64/boot/Image boot.img
 
-      - name: Generate tag
-        id: tag
+      - name: Tag
         run: |
-          SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
-          TAG="${{ inputs.device }}-$(date +%Y%m%d)-${SHORT_SHA}"
-          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "TAG=${{ inputs.device }}-$(date +%Y%m%d)-$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_ENV
 
-      - name: Create GitHub Release
+      - name: GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
-          name: "Kernel ${{ inputs.device }} | ${{ env.TAG }}"
+          name: Kernel ${{ inputs.device }} ${{ env.TAG }}
           files: |
             AnyKernel3-${{ inputs.device }}.zip
             boot.img
@@ -118,12 +107,10 @@ jobs:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
+          MSG="Kernel SUCCESS | Device=${{ inputs.device }} | Type=$KTYPE | Tag=$TAG"
           curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             -F chat_id="${TG_CHAT_ID}" \
-            -F text="✅ Kernel Build SUCCESS
-Device: ${{ inputs.device }}
-Type: $KTYPE
-Tag: $TAG"
+            -F text="$MSG"
 
           curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
             -F chat_id="${TG_CHAT_ID}" \
@@ -141,7 +128,7 @@ Tag: $TAG"
         run: |
           curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             -F chat_id="${TG_CHAT_ID}" \
-            -F text="❌ Kernel Build FAILED | Device=${{ inputs.device }}"
+            -F text="Kernel FAILED | Device=${{ inputs.device }}"
 
           curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
             -F chat_id="${TG_CHAT_ID}" \
