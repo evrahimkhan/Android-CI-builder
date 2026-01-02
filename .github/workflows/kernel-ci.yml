@@ -31,8 +31,7 @@ jobs:
       TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
 
     steps:
-      - name: Checkout CI repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -51,12 +50,7 @@ jobs:
           git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
           echo "$PWD/clang/bin" >> $GITHUB_PATH
 
-      - name: Setup ccache
-        run: |
-          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
-          ccache -M 10G
-
-      - name: Export build environment (HOST FIX)
+      - name: Setup build env
         run: |
           echo "ARCH=arm64" >> $GITHUB_ENV
           echo "CC=clang" >> $GITHUB_ENV
@@ -64,10 +58,8 @@ jobs:
           echo "HOSTCXX=g++" >> $GITHUB_ENV
           echo "LLVM=1" >> $GITHUB_ENV
           echo "LLVM_IAS=1" >> $GITHUB_ENV
-          echo "CROSS_COMPILE=" >> $GITHUB_ENV
-          echo "CROSS_COMPILE_ARM32=" >> $GITHUB_ENV
 
-      - name: KernelSU-Next (optional)
+      - name: KernelSU-Next
         if: github.event.inputs.enable_kernelsu_next == 'true'
         run: |
           cd kernel
@@ -88,61 +80,57 @@ jobs:
 
           make -j$(nproc) O=out 2>&1 | tee build.log
 
-      - name: Collect Image
+      - name: Prepare artifacts
         run: |
           mkdir -p artifacts
           cp kernel/out/arch/arm64/boot/Image artifacts/
 
-      - name: Build boot.img (mkbootimg auto v3/v4)
+      - name: Build boot.img
         run: |
-          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
-          python3 tools/mkbootimg/mkbootimg.py \
+          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools
+          python3 tools/mkbootimg.py \
             --kernel artifacts/Image \
             --header_version 4 \
-            -o artifacts/boot.img || \
-          python3 tools/mkbootimg/mkbootimg.py \
-            --kernel artifacts/Image \
-            --header_version 3 \
-            -o artifacts/boot.img
+            -o artifacts/boot.img || true
 
-      - name: AnyKernel3 OTA ZIP
+      - name: AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 anykernel
           cp artifacts/Image anykernel/
-          sed -i "s/device.name1=.*/device.name1=${{ github.event.inputs.codename }}/" anykernel/anykernel.sh
           zip -r9 artifacts/AnyKernel3-${{ github.event.inputs.codename }}.zip anykernel/*
 
-      - name: Extract kernel info
+      - name: Kernel info
         run: |
-          cd kernel
-          echo "KERNEL_VER=$(strings out/vmlinux | grep 'Linux version' | head -n1)" >> $GITHUB_ENV
+          echo "KERNEL_VER=$(strings kernel/out/vmlinux | grep 'Linux version' | head -n1)" >> $GITHUB_ENV
           echo "CLANG_VER=$(clang --version | head -n1)" >> $GITHUB_ENV
 
-      - name: Create GitHub Release
-        id: release
+      - name: Generate release tag
+        run: |
+          echo "RELEASE_TAG=v$(date +'%Y%m%d-%H%M')-${{ github.event.inputs.codename }}" >> $GITHUB_ENV
+
+      - name: GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v$(date +'%Y%m%d-%H%M')-${{ github.event.inputs.codename }}
+          tag_name: ${{ env.RELEASE_TAG }}
           name: Kernel • ${{ github.event.inputs.codename }}
           body: |
-            🧠 $KERNEL_VER
-            🛠 $CLANG_VER
-            🧩 $KERNEL_TYPE
+            🧠 ${{ env.KERNEL_VER }}
+            🛠 ${{ env.CLANG_VER }}
+            🧩 ${{ env.KERNEL_TYPE }}
           files: |
             artifacts/AnyKernel3-${{ github.event.inputs.codename }}.zip
             artifacts/boot.img
 
-      - name: Telegram SUCCESS (release files)
+      - name: Telegram SUCCESS
         if: success()
         run: |
-          MSG="✅ Kernel Released
-📱 Device: ${{ github.event.inputs.codename }}
+          curl -s -X POST https://api.telegram.org/bot$TG_TOKEN/sendMessage \
+            -d chat_id=$TG_CHAT_ID \
+            -d text="✅ Kernel Released
+📱 ${{ github.event.inputs.codename }}
 🧩 $KERNEL_TYPE
 🧠 $KERNEL_VER
 🛠 $CLANG_VER"
-          curl -s -X POST https://api.telegram.org/bot$TG_TOKEN/sendMessage \
-            -d chat_id=$TG_CHAT_ID \
-            -d text="$MSG"
 
           curl -s -X POST https://api.telegram.org/bot$TG_TOKEN/sendDocument \
             -F chat_id=$TG_CHAT_ID \
@@ -157,7 +145,7 @@ jobs:
         run: |
           curl -s -X POST https://api.telegram.org/bot$TG_TOKEN/sendMessage \
             -d chat_id=$TG_CHAT_ID \
-            -d text="❄️ Kernel Build Failed"
+            -d text="❄️ Kernel build failed"
           curl -s -X POST https://api.telegram.org/bot$TG_TOKEN/sendDocument \
             -F chat_id=$TG_CHAT_ID \
             -F document=@kernel/build.log
