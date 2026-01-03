@@ -3,183 +3,101 @@ name: Android Kernel CI
 on:
   workflow_dispatch:
     inputs:
-      device:
-        description: "Device codename (e.g. stone)"
+      KERNEL_REPO:
+        description: "Kernel repo URL"
+        required: true
+        default: "https://github.com/termn0xh/CyberEdge_Kernel_Xiaomi_Stone.git"
+      KERNEL_BRANCH:
+        description: "Kernel branch"
+        required: true
+        default: "main"
+      DEVICE:
+        description: "Device codename"
         required: true
         default: "stone"
 
-      defconfig:
-        description: "Kernel defconfig (e.g. stone_defconfig)"
-        required: true
-        default: "stone_defconfig"
-
-      kernel_source:
-        description: "Kernel source git URL"
-        required: true
-
-      kernel_branch:
-        description: "Kernel source branch"
-        required: true
-        default: "main"
-
-      enable_kernelsu_next:
-        description: "Enable KernelSU-Next (true/false)"
-        required: true
-        default: "false"
-
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+
     env:
-      TZ: Asia/Dhaka
+      TG_TOKEN: ${{ secrets.TG_TOKEN }}
+      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
 
     steps:
-    - name: Checkout CI repo
-      uses: actions/checkout@v4
+      - name: Checkout (dummy)
+        uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y \
-          bc bison flex git ccache \
-          build-essential libssl-dev \
-          libelf-dev dwarves \
-          python3 zip curl
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y git bc bison flex build-essential \
+            curl zip unzip python3 clang lld
 
-    - name: Setup ccache
-      run: |
-        echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
-        ccache -M 10G
+      - name: Clone kernel source
+        run: |
+          git clone --depth=1 -b "${{ github.event.inputs.KERNEL_BRANCH }}" \
+            "${{ github.event.inputs.KERNEL_REPO }}" kernel
+          echo "✅ Kernel cloned from correct branch"
 
-    - name: Clone kernel source (correct branch)
-      run: |
-        git clone --depth=1 \
-          -b "${{ inputs.kernel_branch }}" \
-          "${{ inputs.kernel_source }}" kernel
+      - name: Build kernel
+        id: build
+        run: |
+          set +e
+          START=$(date +%s)
 
-    - name: Clone Proton Clang
-      run: |
-        git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+          cd kernel || exit 1
 
-    - name: Export toolchains
-      run: |
-        echo "$PWD/clang/bin" >> $GITHUB_PATH
-        echo "ARCH=arm64" >> $GITHUB_ENV
-        echo "SUBARCH=arm64" >> $GITHUB_ENV
-        echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
-        echo "CC=clang" >> $GITHUB_ENV
-        echo "LD=ld.lld" >> $GITHUB_ENV
+          make defconfig
+          make -j$(nproc) 2>&1 | tee build.log
 
-    - name: Apply KernelSU-Next (optional)
-      if: inputs.enable_kernelsu_next == 'true'
-      run: |
-        cd kernel
-        curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
+          END=$(date +%s)
+          echo "BUILD_TIME=$((END-START))" >> $GITHUB_ENV
 
-    - name: Build kernel
-      id: build
-      run: |
-        set -o pipefail
-        START=$(date +%s)
+          if [ -f arch/arm64/boot/Image ]; then
+            echo "STATUS=SUCCESS" >> $GITHUB_ENV
+          else
+            echo "STATUS=FAILED" >> $GITHUB_ENV
+            exit 1
+          fi
 
-        mkdir -p kernel/out
-        cd kernel
+      - name: Package outputs
+        if: env.STATUS == 'SUCCESS'
+        run: |
+          cd kernel
+          cp arch/arm64/boot/Image ../boot.img
+          zip -r AnyKernel-${{ github.event.inputs.DEVICE }}.zip boot.img
 
-        make O=out ${{ inputs.defconfig }}
-        make -j$(nproc) O=out \
-          CC=clang \
-          LD=ld.lld \
-          AR=llvm-ar \
-          NM=llvm-nm \
-          OBJCOPY=llvm-objcopy \
-          OBJDUMP=llvm-objdump \
-          STRIP=llvm-strip \
-          2>&1 | tee build.log
+      - name: Telegram SUCCESS
+        if: env.STATUS == 'SUCCESS'
+        run: |
+          MSG="✅ Kernel SUCCESS
+Device: ${{ github.event.inputs.DEVICE }}
+Time: ${BUILD_TIME}s"
 
-        END=$(date +%s)
-        echo "BUILD_TIME=$((END-START))" >> $GITHUB_ENV
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT_ID}" \
+            -d text="$MSG"
 
-    - name: Extract kernel info
-      run: |
-        cd kernel/out
-        echo "KERNEL_VER=$(strings vmlinux | grep -m1 'Linux version')" >> $GITHUB_ENV
-        echo "CLANG_VER=$(clang --version | head -n1)" >> $GITHUB_ENV
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
+            -F chat_id="${TG_CHAT_ID}" \
+            -F document=@AnyKernel-${{ github.event.inputs.DEVICE }}.zip
 
-        if grep -q CONFIG_GKI=y .config; then
-          echo "KERNEL_TYPE=GKI" >> $GITHUB_ENV
-        else
-          echo "KERNEL_TYPE=NON-GKI" >> $GITHUB_ENV
-        fi
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
+            -F chat_id="${TG_CHAT_ID}" \
+            -F document=@boot.img
 
-    - name: Build boot.img
-      run: |
-        git clone https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
-        python3 tools/mkbootimg/mkbootimg.py \
-          --kernel kernel/out/arch/arm64/boot/Image \
-          --output boot.img
+      - name: Telegram FAILED
+        if: failure()
+        run: |
+          MSG="❌ Kernel FAILED
+Device: ${{ github.event.inputs.DEVICE }}"
 
-    - name: Build AnyKernel3 ZIP
-      run: |
-        git clone https://github.com/osm0sis/AnyKernel3 ak3
-        cp kernel/out/arch/arm64/boot/Image ak3/Image
-        cd ak3
-        zip -r9 ../AnyKernel3-${{ inputs.device }}.zip *
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT_ID}" \
+            -d text="$MSG"
 
-    - name: Create GitHub Release
-      if: success()
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: build-${{ github.run_number }}
-        name: Kernel ${{ inputs.device }}
-        files: |
-          AnyKernel3-${{ inputs.device }}.zip
-          boot.img
-          kernel/build.log
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Telegram SUCCESS
-      if: success()
-      run: |
-        MSG=$(cat <<EOF
-✅ Kernel build SUCCESS
-📱 Device: ${{ inputs.device }}
-🧩 ${KERNEL_TYPE}
-🧠 ${KERNEL_VER}
-🛠 ${CLANG_VER}
-⏱ Build time: ${BUILD_TIME}s
-EOF
-)
-        curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
-          -d chat_id="${{ secrets.TG_CHAT_ID }}" \
-          --data-urlencode "text=$MSG"
-
-        curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument" \
-          -F chat_id="${{ secrets.TG_CHAT_ID }}" \
-          -F document=@AnyKernel3-${{ inputs.device }}.zip
-
-        curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument" \
-          -F chat_id="${{ secrets.TG_CHAT_ID }}" \
-          -F document=@boot.img
-
-        curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument" \
-          -F chat_id="${{ secrets.TG_CHAT_ID }}" \
-          -F document=@kernel/build.log
-
-    - name: Telegram FAILURE
-      if: failure()
-      run: |
-        MSG=$(cat <<EOF
-❌ Kernel build FAILED
-📱 Device: ${{ inputs.device }}
-EOF
-)
-        curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
-          -d chat_id="${{ secrets.TG_CHAT_ID }}" \
-          --data-urlencode "text=$MSG"
-
-        if [ -f kernel/build.log ]; then
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument" \
-            -F chat_id="${{ secrets.TG_CHAT_ID }}" \
+          [ -f kernel/build.log ] && \
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
+            -F chat_id="${TG_CHAT_ID}" \
             -F document=@kernel/build.log
-        fi
