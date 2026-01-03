@@ -57,7 +57,7 @@ jobs:
           restore-keys: |
             ccache-${{ runner.os }}-
 
-      - name: Clone kernel source
+      - name: Clone kernel source (correct branch)
         run: |
           git clone --depth=1 \
             -b "${{ inputs.kernel_branch }}" \
@@ -74,20 +74,24 @@ jobs:
           cd kernel
           curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
 
+      - name: Generate release tag
+        run: |
+          TAG="${{ inputs.device }}-$(date +%Y%m%d-%H%M)"
+          echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+
       - name: Build kernel
-        id: build
         run: |
           set -e
           START=$(date +%s)
 
           cd kernel
 
-          # 🔧 HOST TOOLS FIX (relr.dyn issue)
+          # 🛠 HOST tools (fix relr.dyn / libc issue)
           export HOSTCC=gcc
           export HOSTCXX=g++
           export HOSTLD=ld
 
-          # 🎯 TARGET TOOLS
+          # 🎯 Target tools
           export CC=clang
           export LD=ld.lld
           export CROSS_COMPILE=aarch64-linux-gnu-
@@ -111,23 +115,29 @@ jobs:
           cd kernel
           tail -n 300 build.log > error.log
 
-      - name: Collect artifacts
+      - name: Collect size info
         if: success()
         run: |
           cd kernel/out/arch/arm64/boot
-          echo "IMG_SIZE=$(stat -c%s Image.gz-dtb 2>/dev/null || stat -c%s Image)" >> $GITHUB_ENV
+          if [ -f Image.gz-dtb ]; then
+            stat -c%s Image.gz-dtb > /tmp/size
+          else
+            stat -c%s Image > /tmp/size
+          fi
+          echo "IMG_SIZE=$(cat /tmp/size)" >> $GITHUB_ENV
 
       - name: Create GitHub Release
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "${{ inputs.device }}-$(date +%Y%m%d-%H%M)"
+          tag_name: ${{ env.RELEASE_TAG }}
           name: "Kernel • ${{ inputs.device }}"
           body: |
             ✅ Device: ${{ inputs.device }}
             🌿 Branch: ${{ inputs.kernel_branch }}
             🔐 KernelSU-Next: ${{ inputs.kernelsu_next }}
             ⏱ Build time: ${{ env.BUILD_TIME }}s
+            📦 Image size: ${{ env.IMG_SIZE }} bytes
           files: |
             kernel/build.log
             kernel/out/arch/arm64/boot/Image*
@@ -136,24 +146,24 @@ jobs:
         if: success()
         run: |
           curl -s -F chat_id="${{ secrets.TG_CHAT_ID }}" \
+               -F document=@kernel/build.log \
                -F caption="✅ Kernel Build SUCCESS
 
 📱 Device: ${{ inputs.device }}
 🌿 Branch: ${{ inputs.kernel_branch }}
 🔐 KernelSU-Next: ${{ inputs.kernelsu_next }}
-⏱ Build time: ${BUILD_TIME}s
-📦 Image size: ${IMG_SIZE} bytes" \
-               -F document=@kernel/build.log \
+⏱ Build time: ${{ env.BUILD_TIME }}s
+📦 Image size: ${{ env.IMG_SIZE }} bytes" \
                https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument
 
       - name: Telegram FAILURE (error.log)
         if: failure()
         run: |
           curl -s -F chat_id="${{ secrets.TG_CHAT_ID }}" \
+               -F document=@kernel/error.log \
                -F caption="❌ Kernel Build FAILED
 
 📱 Device: ${{ inputs.device }}
 🌿 Branch: ${{ inputs.kernel_branch }}
 🔐 KernelSU-Next: ${{ inputs.kernelsu_next }}" \
-               -F document=@kernel/error.log \
                https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument
