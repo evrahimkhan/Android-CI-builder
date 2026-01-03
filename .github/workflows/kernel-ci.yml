@@ -37,6 +37,7 @@ jobs:
       ARCH: arm64
       SUBARCH: arm64
       CCACHE_DIR: ${{ github.workspace }}/.ccache
+      TZ: Asia/Dhaka
 
     steps:
       - name: Checkout CI repo
@@ -71,8 +72,7 @@ jobs:
         if: ${{ inputs.kernelsu_next }}
         run: |
           cd kernel
-          curl -LSs \
-            https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
+          curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
 
       - name: Build kernel
         id: build
@@ -95,6 +95,7 @@ jobs:
             2>&1 | tee build.log
 
           END=$(date +%s)
+
           echo "BUILD_TIME=$((END-START))" >> $GITHUB_ENV
           echo "SUCCESS=1" >> $GITHUB_ENV
 
@@ -114,7 +115,7 @@ jobs:
         if: env.SUCCESS == '1'
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git ak3
-          cp kernel/out/arch/arm64/boot/Image.gz-dtb ak3/
+          cp kernel/out/arch/arm64/boot/Image* ak3/ || true
           cd ak3
           zip -r9 ../AnyKernel-${{ inputs.device }}.zip *
 
@@ -128,42 +129,40 @@ jobs:
             AnyKernel-${{ inputs.device }}.zip
             kernel/build.log
 
-      - name: Telegram Success Message (Styled)
+      - name: Telegram Success Message
         if: env.SUCCESS == '1'
         run: |
-          KVER=$(cat kernel/kernel.info)
-          curl -s -X POST https://api.telegram.org/bot$TG_TOKEN/sendMessage \
+          KVER="$(cat kernel/kernel.info)"
+          curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
             -d chat_id="$TG_CHAT_ID" \
             -d parse_mode="Markdown" \
             -d text="✅ *Kernel Build Success*
 📱 *Device:* \`${{ inputs.device }}\`
 🧠 *Type:* \`${KERNEL_TYPE}\`
 🛠 *${KVER}*
-⏱ *Build Time:* \`${BUILD_TIME}s\`
-
-📦 *Artifacts sent below* ⬇️"
+⏱ *Build Time:* \`${BUILD_TIME}s\`"
 
       - name: Telegram Upload ZIP
         if: env.SUCCESS == '1'
         run: |
           curl -s -F chat_id="$TG_CHAT_ID" \
                -F document=@AnyKernel-${{ inputs.device }}.zip \
-               https://api.telegram.org/bot$TG_TOKEN/sendDocument
+               "https://api.telegram.org/bot$TG_TOKEN/sendDocument"
 
       - name: Telegram Upload build.log
         if: env.SUCCESS == '1'
         run: |
           curl -s -F chat_id="$TG_CHAT_ID" \
                -F document=@kernel/build.log \
-               https://api.telegram.org/bot$TG_TOKEN/sendDocument
+               "https://api.telegram.org/bot$TG_TOKEN/sendDocument"
 
       - name: Telegram Failure (error.log)
         if: failure()
         run: |
-          cd kernel
-          tail -n 200 build.log > error.log || true
+          cd kernel || exit 0
+          tail -n 300 build.log > error.log || true
           curl -s -F chat_id="$TG_CHAT_ID" \
                -F document=@error.log \
                -F caption="❌ Kernel build FAILED (${{
  inputs.device }})" \
-               https://api.telegram.org/bot$TG_TOKEN/sendDocument
+               "https://api.telegram.org/bot$TG_TOKEN/sendDocument"
