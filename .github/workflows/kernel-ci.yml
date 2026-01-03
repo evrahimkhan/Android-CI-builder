@@ -111,17 +111,27 @@ jobs:
           name: Kernel-${{ inputs.device }}
           files: |
             anykernel/*.zip
-            kernel/out/arch/arm64/boot/Image
             kernel/build.log
 
-      - name: Telegram Success
+      # ✅ Telegram ZIP upload
+      - name: Telegram Upload ZIP
+        if: env.SUCCESS == '1'
+        run: |
+          curl -s -F chat_id="$TG_CHAT_ID" \
+            -F document=@anykernel/Kernel-${{ inputs.device }}.zip \
+            -F caption="📦 Kernel ZIP | Device=${{ inputs.device }} | $KERNEL_TYPE" \
+            https://api.telegram.org/bot$TG_TOKEN/sendDocument
+
+      # ✅ Telegram build.log upload
+      - name: Telegram Upload build.log
         if: env.SUCCESS == '1'
         run: |
           curl -s -F chat_id="$TG_CHAT_ID" \
             -F document=@kernel/build.log \
-            -F caption="✅ Kernel build SUCCESS | Device=${{ inputs.device }} | $KERNEL_TYPE | ${BUILD_TIME}s" \
+            -F caption="✅ Build SUCCESS | ${BUILD_TIME}s" \
             https://api.telegram.org/bot$TG_TOKEN/sendDocument
 
+      # ❌ Telegram error.log on failure
       - name: Telegram Failure
         if: env.SUCCESS == '0'
         run: |
