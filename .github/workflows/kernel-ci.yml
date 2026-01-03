@@ -20,7 +20,6 @@ on:
         default: stone_defconfig
       kernelsu_next:
         description: "Enable KernelSU-Next"
-        required: true
         type: boolean
         default: false
 
@@ -48,28 +47,27 @@ jobs:
 
       - name: Setup ccache
         run: |
-          echo "CCACHE_DIR=$CCACHE_DIR" >> $GITHUB_ENV
-          echo "PATH=/usr/lib/ccache:$PATH" >> $GITHUB_ENV
+          echo "CCACHE_DIR=${CCACHE_DIR}" >> $GITHUB_ENV
+          echo "/usr/lib/ccache" >> $GITHUB_PATH
 
       - name: Clone Proton Clang
         run: |
           git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
-          echo "$PWD/clang/bin" >> $GITHUB_PATH
+          echo "${PWD}/clang/bin" >> $GITHUB_PATH
 
-      - name: Clone Kernel Source (correct branch)
+      - name: Clone Kernel Source (selected branch)
         run: |
           git clone --depth=1 \
             -b "${{ inputs.kernel_branch }}" \
             "${{ inputs.kernel_source }}" kernel
 
-      - name: Apply KernelSU-Next (optional)
+      - name: Apply KernelSU-Next
         if: ${{ inputs.kernelsu_next }}
         run: |
           cd kernel
           curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
 
       - name: Build Kernel
-        id: build
         run: |
           set -o pipefail
           cd kernel
@@ -79,9 +77,8 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           make O=out "${{ inputs.defconfig }}"
           make -j$(nproc) O=out 2>&1 | tee build.log
-          echo "SUCCESS=1" >> $GITHUB_ENV
 
-      - name: Collect Kernel Info
+      - name: Extract Kernel Info
         if: success()
         run: |
           cd kernel
@@ -94,14 +91,14 @@ jobs:
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ak3
           cp out/arch/arm64/boot/Image ak3/
           cd ak3
-          zip -r9 ../AnyKernel3-${{ inputs.device }}.zip *
+          zip -r9 ../AnyKernel3-${{ inputs.device }}.zip .
 
-      - name: Upload GitHub Release
+      - name: GitHub Release
         if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: kernel-${{ github.run_number }}
-          name: Kernel Build ${{ inputs.device }}
+          name: Kernel ${{ inputs.device }}
           files: |
             kernel/AnyKernel3-${{ inputs.device }}.zip
             kernel/build.log
@@ -112,14 +109,11 @@ jobs:
         if: success()
         run: |
           cd kernel
-          KVER="$(cat kernel.info || echo unknown)"
-          MSG="✅ Kernel Build Success
-📱 Device: ${{ inputs.device }}
-🌿 Branch: ${{ inputs.kernel_branch }}
-🧠 $KVER"
+          KVER=$(cat kernel.info 2>/dev/null || echo unknown)
+          TEXT="✅ Kernel Build Success\n📱 Device: ${{ inputs.device }}\n🌿 Branch: ${{ inputs.kernel_branch }}\n🧠 ${KVER}"
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TG_CHAT_ID }}" \
-            --data-urlencode "text=$MSG"
+            --data-urlencode "text=${TEXT}"
 
           curl -s -F chat_id="${{ secrets.TG_CHAT_ID }}" \
             -F document=@AnyKernel3-${{ inputs.device }}.zip \
