@@ -6,24 +6,19 @@ on:
       codename:
         description: "Device codename (e.g. stone)"
         required: true
-        type: string
       defconfig:
         description: "Kernel defconfig (e.g. stone_defconfig)"
         required: true
-        type: string
       kernel_source:
         description: "Kernel source git URL"
         required: true
-        type: string
       kernel_branch:
         description: "Kernel git branch"
         required: true
-        type: string
       enable_kernelsu:
-        description: "Enable KernelSU-Next"
+        description: "Enable KernelSU-Next (true/false)"
         required: false
         default: "false"
-        type: boolean
 
 jobs:
   build:
@@ -32,8 +27,8 @@ jobs:
     env:
       ARCH: arm64
       CC: clang
-      LLVM: 1
-      LLVM_IAS: 1
+      LLVM: "1"
+      LLVM_IAS: "1"
 
     steps:
     - name: Checkout CI repo
@@ -66,11 +61,10 @@ jobs:
           "${{ inputs.kernel_source }}" kernel
 
     - name: KernelSU-Next (optional)
-      if: inputs.enable_kernelsu == true
+      if: ${{ inputs.enable_kernelsu == 'true' }}
       run: |
         cd kernel
-        curl -LSs \
-          https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
+        curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
 
     - name: Start build timer
       run: echo "BUILD_START=$(date +%s)" >> $GITHUB_ENV
@@ -84,16 +78,16 @@ jobs:
     - name: Build kernel
       run: |
         cd kernel
+        set -o pipefail
         make -j$(nproc) O=out 2>&1 | tee build.log
 
     - name: Collect kernel info
       if: success()
       run: |
         cd kernel
-        KERNEL_VER=$(strings out/vmlinux | grep "Linux version" | head -n1)
-        echo "KERNEL_VER=$KERNEL_VER" >> $GITHUB_ENV
+        echo "KERNEL_VER=$(strings out/vmlinux | grep 'Linux version' | head -n1)" >> $GITHUB_ENV
 
-        if grep -q "GKI" out/.config; then
+        if grep -q "CONFIG_GKI" out/.config; then
           echo "KERNEL_TYPE=GKI" >> $GITHUB_ENV
         else
           echo "KERNEL_TYPE=NON-GKI" >> $GITHUB_ENV
@@ -122,20 +116,19 @@ jobs:
     - name: Build boot.img
       if: success()
       run: |
-        git clone --depth=1 \
-          https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
+        git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
 
         python3 tools/mkbootimg/mkbootimg.py \
           --kernel kernel/out/arch/arm64/boot/Image \
           --header_version 4 \
           -o boot.img
 
-    - name: Create GitHub Release
+    - name: GitHub Release
       if: success()
       uses: softprops/action-gh-release@v2
       with:
         tag_name: "${{ inputs.codename }}-${{ github.run_number }}"
-        name: "Kernel for ${{ inputs.codename }}"
+        name: "Kernel • ${{ inputs.codename }}"
         files: |
           ${{ env.AK_ZIP }}
           boot.img
@@ -147,24 +140,24 @@ jobs:
         TG_TOKEN: ${{ secrets.TG_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       run: |
-        TEXT="✅ Kernel build SUCCESS
+        MSG="✅ Kernel Build SUCCESS
 
 📱 Device: ${{ inputs.codename }}
-🧠 $KERNEL_VER
-🔥 Type: $KERNEL_TYPE
-⏱ Time: $BUILD_TIME
-📦 Image: $IMAGE_SIZE
+🧠 ${KERNEL_VER}
+🔥 ${KERNEL_TYPE}
+⏱ ${BUILD_TIME}
+📦 Image: ${IMAGE_SIZE}
 "
-        curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
-          -d chat_id="$TG_CHAT_ID" \
-          -d text="$TEXT"
+        curl -s https://api.telegram.org/bot${TG_TOKEN}/sendMessage \
+          -d chat_id="${TG_CHAT_ID}" \
+          -d text="$MSG"
 
-        curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendDocument" \
-          -F chat_id="$TG_CHAT_ID" \
+        curl -s https://api.telegram.org/bot${TG_TOKEN}/sendDocument \
+          -F chat_id="${TG_CHAT_ID}" \
           -F document=@"${{ env.AK_ZIP }}"
 
-        curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendDocument" \
-          -F chat_id="$TG_CHAT_ID" \
+        curl -s https://api.telegram.org/bot${TG_TOKEN}/sendDocument \
+          -F chat_id="${TG_CHAT_ID}" \
           -F document=@"boot.img"
 
     - name: Telegram FAILURE
@@ -173,6 +166,6 @@ jobs:
         TG_TOKEN: ${{ secrets.TG_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       run: |
-        curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
-          -d chat_id="$TG_CHAT_ID" \
+        curl -s https://api.telegram.org/bot${TG_TOKEN}/sendMessage \
+          -d chat_id="${TG_CHAT_ID}" \
           -d text="❌ Kernel build FAILED for ${{ inputs.codename }}"
