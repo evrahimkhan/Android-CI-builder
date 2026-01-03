@@ -16,7 +16,7 @@ on:
         description: Kernel defconfig
         required: true
       kernelsu_next:
-        description: Enable KernelSU-Next
+        description: Enable KernelSU-Next (true/false)
         required: true
         default: "false"
 
@@ -34,7 +34,7 @@ jobs:
       - name: Checkout CI repo
         uses: actions/checkout@v4
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y \
@@ -42,16 +42,17 @@ jobs:
             build-essential libssl-dev \
             python3 zip unzip
 
-      - name: Clone Proton-Clang
+      - name: Restore Proton-Clang cache
         uses: actions/cache@v4
         with:
           path: clang
           key: proton-clang
 
       - name: Setup Proton-Clang
-        if: ${{ !exists('clang/bin/clang') }}
         run: |
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+          if [ ! -x clang/bin/clang ]; then
+            git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+          fi
 
       - name: Clone Kernel Source
         run: |
@@ -67,6 +68,7 @@ jobs:
 
       - name: Build Kernel
         run: |
+          set -o pipefail
           export PATH=$PWD/clang/bin:$PATH
           export CC=clang
           export LD=ld.lld
@@ -92,7 +94,7 @@ jobs:
 
       - name: Detect GKI
         run: |
-          if grep -q "GKI" kernel/out/.config; then
+          if grep -q CONFIG_GKI kernel/out/.config; then
             echo "KERNEL_TYPE=GKI" >> $GITHUB_ENV
           else
             echo "KERNEL_TYPE=NON-GKI" >> $GITHUB_ENV
@@ -111,6 +113,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
+          name: Kernel-${{ inputs.device }}
           files: |
             anykernel/*.zip
             kernel/out/arch/arm64/boot/Image
