@@ -66,12 +66,10 @@ jobs:
           git clone --depth=1 -b "${{ inputs.kernel_branch }}" \
             "${{ inputs.kernel_source }}" kernel
 
-      # 🚀 Telegram build started
+      # 🚀 Telegram: Build Started
       - name: Telegram build started
         run: |
-          MSG="🚀 Kernel Build Started
-📱 Device: ${DEVICE}
-🌿 Branch: ${{ inputs.kernel_branch }}"
+          MSG=$'🚀 Kernel Build Started\n📱 Device: '"${DEVICE}"$'\n🌿 Branch: '"${{ inputs.kernel_branch }}"$''
 
           curl -s https://api.telegram.org/bot${TG_TOKEN}/sendMessage \
             -d chat_id="${TG_CHAT_ID}" \
@@ -96,7 +94,6 @@ jobs:
 
           cd kernel
           mkdir -p out
-
           make O=out ${{ inputs.defconfig }}
 
           START=$(date +%s)
@@ -110,7 +107,6 @@ jobs:
 
           END=$(date +%s)
           echo "BUILD_TIME=$((END-START))" >> $GITHUB_ENV
-
           echo "KERNEL_VERSION=$(make kernelversion)" >> $GITHUB_ENV
           echo "CLANG_VERSION=$(clang --version | head -n1)" >> $GITHUB_ENV
 
@@ -143,27 +139,11 @@ jobs:
           cd anykernel
           zip -r Kernel-${DEVICE}.zip *
 
-      - name: GitHub Release
-        if: env.SUCCESS == '1'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ github.run_number }}
-          name: Kernel-${{ inputs.device }}
-          files: |
-            anykernel/*.zip
-            kernel/build.log
-
-      # ✅ Telegram success
+      # ✅ Telegram: Success
       - name: Telegram success
         if: env.SUCCESS == '1'
         run: |
-          MSG="✅ Kernel Build Success
-📱 Device: ${DEVICE}
-🧠 Type: ${KERNEL_TYPE}
-🛠 Linux: ${KERNEL_VERSION}
-⚙️ ${CLANG_VERSION}
-⏱ Build Time: ${BUILD_TIME}s
-📦 ZIP + build.log sent below"
+          MSG=$'✅ Kernel Build Success\n📱 Device: '"${DEVICE}"$'\n🧠 Type: '"${KERNEL_TYPE}"$'\n🛠 Linux: '"${KERNEL_VERSION}"$'\n⚙️ '"${CLANG_VERSION}"$'\n⏱ Build Time: '"${BUILD_TIME}"$'s\n📦 ZIP + build.log sent below'
 
           curl -s https://api.telegram.org/bot${TG_TOKEN}/sendMessage \
             -d chat_id="${TG_CHAT_ID}" \
@@ -177,14 +157,11 @@ jobs:
             -F document=@kernel/build.log \
             https://api.telegram.org/bot${TG_TOKEN}/sendDocument
 
-      # ❌ Telegram failure
+      # ❌ Telegram: Failure
       - name: Telegram failure
         if: env.SUCCESS == '0'
         run: |
-          MSG="❌ Kernel Build Failed
-📱 Device: ${DEVICE}
-⏱ Time: ${BUILD_TIME}s
-📄 error.log attached"
+          MSG=$'❌ Kernel Build Failed\n📱 Device: '"${DEVICE}"$'\n⏱ Time: '"${BUILD_TIME}"$'s\n📄 error.log attached'
 
           curl -s https://api.telegram.org/bot${TG_TOKEN}/sendMessage \
             -d chat_id="${TG_CHAT_ID}" \
