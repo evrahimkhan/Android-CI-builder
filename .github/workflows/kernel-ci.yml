@@ -11,6 +11,7 @@ on:
       kernel_source:
         description: "Kernel source URL"
         required: true
+        default: ""
 
       kernel_branch:
         description: "Kernel branch"
@@ -25,11 +26,7 @@ on:
       kernelsu_next:
         description: "Enable KernelSU-Next"
         required: true
-        type: choice
         default: "false"
-        options:
-          - "true"
-          - "false"
 
 jobs:
   build:
@@ -43,12 +40,12 @@ jobs:
       - name: Checkout CI repo
         uses: actions/checkout@v4
 
-      - name: Setup build deps
+      - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y \
-            bc bison build-essential ccache curl flex git \
-            libssl-dev libelf-dev dwarves python3 zip unzip
+            bc bison build-essential curl flex git \
+            libssl-dev libelf-dev python3 zip unzip
 
       - name: Clone kernel source
         run: |
@@ -62,7 +59,7 @@ jobs:
           cd kernel
           curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
 
-      - name: Setup toolchain (Clang)
+      - name: Setup Clang
         run: |
           git clone --depth=1 https://github.com/llvm/llvm-project clang
           echo "$(pwd)/clang/bin" >> $GITHUB_PATH
@@ -70,8 +67,8 @@ jobs:
       - name: Build kernel
         run: |
           set -e
-          mkdir -p kernel/out
           cd kernel
+          mkdir -p out
 
           make O=out ARCH=arm64 ${{ inputs.defconfig }}
 
@@ -86,50 +83,26 @@ jobs:
             STRIP=llvm-strip \
             2>&1 | tee build.log
 
-      - name: Extract kernel info
-        if: success()
-        run: |
-          cd kernel
-          KVER=$(strings out/vmlinux | grep -m1 "Linux version")
-          COMPILER=$(clang --version | head -n1)
-          echo "KERNEL_VER=$KVER" >> $GITHUB_ENV
-          echo "COMPILER=$COMPILER" >> $GITHUB_ENV
-
-      - name: Detect GKI
-        if: success()
-        run: |
-          cd kernel
-          if grep -q CONFIG_GKI out/.config; then
-            echo "KERNEL_TYPE=GKI" >> $GITHUB_ENV
-          else
-            echo "KERNEL_TYPE=Non-GKI" >> $GITHUB_ENV
-          fi
-
-      - name: AnyKernel3 (hardened)
+      - name: Prepare AnyKernel3 ZIP
         if: success()
         run: |
           mkdir -p artifacts
           cd kernel
+
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3
+          cp out/arch/arm64/boot/Image AnyKernel3/Image
+
           cd AnyKernel3
+          zip -r9 ../AnyKernel3-${{ inputs.device }}.zip .
 
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's/do.modules=1/do.modules=0/' anykernel.sh
-          echo "is_slot_device=1" >> anykernel.sh
-
-          cp ../out/arch/arm64/boot/Image Image
-
-          ZIP_NAME=AnyKernel3-${{ inputs.device }}-${{ env.KERNEL_TYPE }}.zip
-          zip -r9 ../../artifacts/$ZIP_NAME *
-
-          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+          mv ../AnyKernel3-${{ inputs.device }}.zip ../artifacts/
 
       - name: Create GitHub Release
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "${{ inputs.device }}-${{ env.KERNEL_TYPE }}-${{ github.run_number }}"
-          name: "Kernel | ${{ inputs.device }} | ${{ env.KERNEL_TYPE }}"
+          tag_name: "${{ inputs.device }}-${{ github.run_number }}"
+          name: "Kernel | ${{ inputs.device }}"
           files: artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -137,23 +110,20 @@ jobs:
       - name: Telegram SUCCESS
         if: success()
         run: |
-          curl -s -X POST https://api.telegram.org/bot${TG_TOKEN}/sendMessage \
-            -d chat_id=${TG_CHAT_ID} \
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT_ID}" \
             -d text="✅ Kernel build SUCCESS
 Device: ${{ inputs.device }}
-Type: ${{ env.KERNEL_TYPE }}
-KernelSU: ${{ inputs.kernelsu_next }}
-${{ env.KERNEL_VER }}
-Compiler: ${{ env.COMPILER }}"
+Branch: ${{ inputs.kernel_branch }}"
 
-          curl -s -X POST https://api.telegram.org/bot${TG_TOKEN}/sendDocument \
-            -F chat_id=${TG_CHAT_ID} \
-            -F document=@artifacts/${{ env.ZIP_NAME }}
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
+            -F chat_id="${TG_CHAT_ID}" \
+            -F document=@artifacts/AnyKernel3-${{ inputs.device }}.zip
 
       - name: Telegram FAILURE
         if: failure()
         run: |
-          curl -s -X POST https://api.telegram.org/bot${TG_TOKEN}/sendMessage \
-            -d chat_id=${TG_CHAT_ID} \
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT_ID}" \
             -d text="❌ Kernel build FAILED
 Device: ${{ inputs.device }}"
