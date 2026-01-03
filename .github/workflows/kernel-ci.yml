@@ -4,29 +4,23 @@ on:
   workflow_dispatch:
     inputs:
       device:
-        description: "Device codename"
+        description: Device codename
         required: true
-        default: "stone"
+        default: stone
 
       kernel_source:
-        description: "Kernel source URL"
+        description: Kernel source URL
         required: true
-        default: ""
 
       kernel_branch:
-        description: "Kernel branch"
+        description: Kernel branch
         required: true
-        default: "main"
+        default: main
 
       defconfig:
-        description: "Kernel defconfig"
+        description: Kernel defconfig
         required: true
-        default: "stone_defconfig"
-
-      kernelsu_next:
-        description: "Enable KernelSU-Next"
-        required: true
-        default: "false"
+        default: stone_defconfig
 
 jobs:
   build:
@@ -53,12 +47,6 @@ jobs:
             -b "${{ inputs.kernel_branch }}" \
             "${{ inputs.kernel_source }}" kernel
 
-      - name: Setup KernelSU-Next
-        if: ${{ inputs.kernelsu_next == 'true' }}
-        run: |
-          cd kernel
-          curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
-
       - name: Setup Clang
         run: |
           git clone --depth=1 https://github.com/llvm/llvm-project clang
@@ -69,9 +57,7 @@ jobs:
           set -e
           cd kernel
           mkdir -p out
-
-          make O=out ARCH=arm64 ${{ inputs.defconfig }}
-
+          make O=out ARCH=arm64 "${{ inputs.defconfig }}"
           make -j$(nproc) \
             O=out ARCH=arm64 \
             CC=clang \
@@ -83,47 +69,30 @@ jobs:
             STRIP=llvm-strip \
             2>&1 | tee build.log
 
-      - name: Prepare AnyKernel3 ZIP
-        if: success()
+      - name: Package AnyKernel3
         run: |
           mkdir -p artifacts
           cd kernel
-
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3
           cp out/arch/arm64/boot/Image AnyKernel3/Image
-
           cd AnyKernel3
           zip -r9 ../AnyKernel3-${{ inputs.device }}.zip .
-
           mv ../AnyKernel3-${{ inputs.device }}.zip ../artifacts/
-
-      - name: Create GitHub Release
-        if: success()
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: "${{ inputs.device }}-${{ github.run_number }}"
-          name: "Kernel | ${{ inputs.device }}"
-          files: artifacts/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Telegram SUCCESS
         if: success()
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT_ID}" \
-            -d text="✅ Kernel build SUCCESS
-Device: ${{ inputs.device }}
-Branch: ${{ inputs.kernel_branch }}"
+          curl -X POST https://api.telegram.org/bot${TG_TOKEN}/sendMessage \
+            -d chat_id=${TG_CHAT_ID} \
+            -d text="✅ Kernel build SUCCESS for ${{ inputs.device }}"
 
-          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
-            -F chat_id="${TG_CHAT_ID}" \
+          curl -X POST https://api.telegram.org/bot${TG_TOKEN}/sendDocument \
+            -F chat_id=${TG_CHAT_ID} \
             -F document=@artifacts/AnyKernel3-${{ inputs.device }}.zip
 
       - name: Telegram FAILURE
         if: failure()
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT_ID}" \
-            -d text="❌ Kernel build FAILED
-Device: ${{ inputs.device }}"
+          curl -X POST https://api.telegram.org/bot${TG_TOKEN}/sendMessage \
+            -d chat_id=${TG_CHAT_ID} \
+            -d text="❌ Kernel build FAILED for ${{ inputs.device }}"
