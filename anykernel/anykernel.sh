@@ -1,41 +1,42 @@
 #!/sbin/sh
-#
 # AnyKernel3 Ramdisk Mod Script
-# Universal CI-ready version
-#
+# by osm0sis @ xda-developers
+# CI-FIXED: Universal + KernelSU auto-detect
 
-AK3_VER=3.6.0
+### AnyKernel properties
+properties() {
+    kernel.string=Android Kernel CI Build By Evrahim
+    do.devicecheck=1
+    do.modules=0
+    do.cleanup=1
+    do.cleanuponabort=0
+    device.name1=@DEVICE@
+}
 
-# Universal settings
-do.devicecheck=0
-do.cleanup=1
-do.modules=0
-do.systemless=0
+### Import core
+. tools/ak3-core.sh
 
-# Device injected by CI
-DEVICE_NAME="@DEVICE@"
-
-# Boot partition
+### Boot block
 block=/dev/block/bootdevice/by-name/boot
 is_slot_device=auto
-
-kernel.string=Image
 ramdisk_compression=auto
 
-properties() {
-  resetprop ro.kernel.anykernel 1
-}
+### -------- KernelSU auto-detection --------
+ui_print ""
+ui_print "🔍 Detecting KernelSU..."
 
-backup_file boot
-replace_kernel
+if [ -e /proc/kernelsu ]; then
+    ui_print "✅ KernelSU detected (already installed)"
+elif strings "$kernel" 2>/dev/null | grep -q "KernelSU"; then
+    ui_print "✅ KernelSU built-in (kernel)"
+elif strings "$kernel" 2>/dev/null | grep -qi "kernelsu-next"; then
+    ui_print "✅ KernelSU-Next detected"
+else
+    ui_print "ℹ️ KernelSU not present (normal kernel)"
+fi
+ui_print ""
+### ----------------------------------------
 
-set_permissions() {
-  return 0
-}
-
-ui_print " "
-ui_print "✅ Kernel flashed successfully"
-ui_print "📱 Device: ${DEVICE_NAME:-Universal}"
-ui_print "🧠 GKI / Non-GKI compatible"
-ui_print "🛠 Installed via AnyKernel3"
-ui_print " "
+### Flash kernel
+dump_boot
+write_boot
