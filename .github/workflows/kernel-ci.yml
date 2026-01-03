@@ -22,7 +22,7 @@ on:
         default: "stone_defconfig"
 
       kernelsu_next:
-        description: "Enable KernelSU-Next (true/false)"
+        description: "Enable KernelSU-Next"
         required: true
         default: "false"
 
@@ -37,27 +37,23 @@ jobs:
       CCACHE_COMPRESS: 1
 
     steps:
-      - name: Checkout CI repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
           sudo apt update
-          sudo apt install -y \
-            git curl bc bison flex \
-            build-essential gcc g++ \
-            libssl-dev libelf-dev \
-            python3 unzip ccache
+          sudo apt install -y git curl bc bison flex \
+            build-essential gcc g++ libssl-dev \
+            libelf-dev python3 unzip ccache
 
       - name: Restore ccache
         uses: actions/cache@v4
         with:
           path: ~/.ccache
           key: ccache-${{ runner.os }}-${{ inputs.device }}
-          restore-keys: |
-            ccache-${{ runner.os }}-
+          restore-keys: ccache-${{ runner.os }}-
 
-      - name: Clone kernel source (correct branch)
+      - name: Clone kernel (selected branch)
         run: |
           git clone --depth=1 \
             -b "${{ inputs.kernel_branch }}" \
@@ -68,30 +64,25 @@ jobs:
           git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
           echo "$(pwd)/clang/bin" >> $GITHUB_PATH
 
-      - name: Enable KernelSU-Next
+      - name: KernelSU-Next
         if: inputs.kernelsu_next == 'true'
         run: |
           cd kernel
           curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
 
-      - name: Generate release tag
+      - name: Release tag
         run: |
-          TAG="${{ inputs.device }}-$(date +%Y%m%d-%H%M)"
-          echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+          echo "RELEASE_TAG=${{ inputs.device }}-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
 
       - name: Build kernel
         run: |
           set -e
-          START=$(date +%s)
-
           cd kernel
 
-          # 🛠 HOST tools (fix relr.dyn / libc issue)
           export HOSTCC=gcc
           export HOSTCXX=g++
           export HOSTLD=ld
 
-          # 🎯 Target tools
           export CC=clang
           export LD=ld.lld
           export CROSS_COMPILE=aarch64-linux-gnu-
@@ -99,71 +90,52 @@ jobs:
 
           mkdir -p out
           make O=out ${{ inputs.defconfig }}
+          make -j$(nproc) O=out | tee build.log
 
-          make -j$(nproc) O=out \
-            CC=clang LD=ld.lld \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            | tee build.log
-
-          END=$(date +%s)
-          echo "BUILD_TIME=$((END - START))" >> $GITHUB_ENV
-
-      - name: Prepare error log
+      - name: Error log
         if: failure()
         run: |
           cd kernel
           tail -n 300 build.log > error.log
 
-      - name: Collect size info
-        if: success()
-        run: |
-          cd kernel/out/arch/arm64/boot
-          if [ -f Image.gz-dtb ]; then
-            stat -c%s Image.gz-dtb > /tmp/size
-          else
-            stat -c%s Image > /tmp/size
-          fi
-          echo "IMG_SIZE=$(cat /tmp/size)" >> $GITHUB_ENV
-
-      - name: Create GitHub Release
+      - name: GitHub Release
         if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: "Kernel • ${{ inputs.device }}"
-          body: |
-            ✅ Device: ${{ inputs.device }}
-            🌿 Branch: ${{ inputs.kernel_branch }}
-            🔐 KernelSU-Next: ${{ inputs.kernelsu_next }}
-            ⏱ Build time: ${{ env.BUILD_TIME }}s
-            📦 Image size: ${{ env.IMG_SIZE }} bytes
           files: |
             kernel/build.log
             kernel/out/arch/arm64/boot/Image*
 
-      - name: Telegram SUCCESS (build.log)
+      # ✅ FIXED TELEGRAM SUCCESS
+      - name: Telegram SUCCESS
         if: success()
         run: |
-          curl -s -F chat_id="${{ secrets.TG_CHAT_ID }}" \
-               -F document=@kernel/build.log \
-               -F caption="✅ Kernel Build SUCCESS
-
+          cat <<EOF > msg.txt
+✅ Kernel Build SUCCESS
 📱 Device: ${{ inputs.device }}
 🌿 Branch: ${{ inputs.kernel_branch }}
 🔐 KernelSU-Next: ${{ inputs.kernelsu_next }}
-⏱ Build time: ${{ env.BUILD_TIME }}s
-📦 Image size: ${{ env.IMG_SIZE }} bytes" \
+🏷 Tag: ${{ env.RELEASE_TAG }}
+EOF
+
+          curl -s -F chat_id="${{ secrets.TG_CHAT_ID }}" \
+               -F document=@kernel/build.log \
+               -F caption="$(cat msg.txt)" \
                https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument
 
-      - name: Telegram FAILURE (error.log)
+      # ✅ FIXED TELEGRAM FAILURE
+      - name: Telegram FAILURE
         if: failure()
         run: |
-          curl -s -F chat_id="${{ secrets.TG_CHAT_ID }}" \
-               -F document=@kernel/error.log \
-               -F caption="❌ Kernel Build FAILED
-
+          cat <<EOF > msg.txt
+❌ Kernel Build FAILED
 📱 Device: ${{ inputs.device }}
 🌿 Branch: ${{ inputs.kernel_branch }}
-🔐 KernelSU-Next: ${{ inputs.kernelsu_next }}" \
+EOF
+
+          curl -s -F chat_id="${{ secrets.TG_CHAT_ID }}" \
+               -F document=@kernel/error.log \
+               -F caption="$(cat msg.txt)" \
                https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendDocument
