@@ -48,15 +48,15 @@ jobs:
           fetch-depth: 1
           submodules: recursive
 
-      - name: Install dependencies
+      - name: Make CI scripts executable
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            bc bison build-essential ccache curl flex git \
-            libelf-dev libssl-dev make python3 rsync unzip wget zip zstd \
-            dwarves xz-utils perl
+          chmod +x ci/*.sh
+
+      - name: Install dependencies
+        shell: bash
+        run: ci/install_deps.sh
 
       - name: Restore Proton Clang cache
         uses: actions/cache@v4
@@ -66,11 +66,7 @@ jobs:
 
       - name: Setup Proton Clang
         shell: bash
-        run: |
-          set -euo pipefail
-          if [ ! -x clang/bin/clang ]; then
-            git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
-          fi
+        run: ci/setup_proton_clang.sh
 
       - name: Restore ccache
         uses: actions/cache@v4
@@ -83,271 +79,39 @@ jobs:
 
       - name: Clone Kernel Source
         shell: bash
-        run: |
-          set -euo pipefail
-          git clone --depth=1 -b "${{ inputs.kernel_branch }}" "${{ inputs.kernel_source }}" kernel
+        run: ci/clone_kernel.sh "${{ inputs.kernel_source }}" "${{ inputs.kernel_branch }}"
 
-      - name: KernelSU-Next
+      - name: Apply KernelSU-Next
         if: ${{ inputs.kernelsu_next == 'true' }}
         shell: bash
-        run: |
-          set -euo pipefail
-          cd kernel
-          curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
-          echo "KernelSU-Next patch applied. git status:"
-          git status --porcelain || true
+        run: ci/apply_kernelsu_next.sh
 
       - name: Patch unsupported Polly flags
         shell: bash
-        run: |
-          set -euo pipefail
-          export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
-
-          if grep -RIn --include='Makefile*' --include='*.mk' --include='*.make' -- '-polly-' kernel >/dev/null 2>&1; then
-            echo "Found -polly-* flags. Checking toolchain compatibility..."
-            if ! clang -c -x c /dev/null -o /tmp/polly_test.o -polly-reschedule=1 >/dev/null 2>&1; then
-              echo "Clang does not accept -polly-*. Stripping from Makefiles..."
-              find kernel -type f \( -name 'Makefile' -o -name 'Makefile.*' -o -name '*.mk' -o -name '*.make' \) -print0 \
-                | xargs -0 sed -i -E \
-                  -e 's/[[:space:]]-mllvm[[:space:]]+-polly-[^[:space:]]+//g' \
-                  -e 's/[[:space:]]-polly-[^[:space:]]+//g'
-            else
-              echo "Clang accepts -polly-*; leaving flags untouched."
-            fi
-          else
-            echo "No -polly-* flags found."
-          fi
+        run: ci/patch_polly.sh
 
       - name: Telegram Build Start
         if: ${{ env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
-        run: |
-          set -euo pipefail
-          curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT_ID}" \
-            --data-urlencode text=$'Kernel Build Started\nDevice: ${{ inputs.device }}\nBranch: ${{ inputs.kernel_branch }}\nDefconfig: ${{ inputs.defconfig }}\nKernelSU-Next: ${{ inputs.kernelsu_next }}'
+        run: ci/telegram.sh start "${{ inputs.device }}" "${{ inputs.kernel_branch }}" "${{ inputs.defconfig }}" "${{ inputs.kernelsu_next }}"
 
       - name: Build Kernel
         shell: bash
-        run: |
-          set -euo pipefail
-          export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
-
-          # default to failure; set to 1 only on successful final make
-          echo "SUCCESS=0" >> "$GITHUB_ENV"
-
-          ccache -M 5G || true
-          ccache -z || true
-
-          export CC="ccache clang"
-          export CXX="ccache clang++"
-          export LD=ld.lld
-          export AR=llvm-ar
-          export NM=llvm-nm
-          export OBJCOPY=llvm-objcopy
-          export OBJDUMP=llvm-objdump
-          export STRIP=llvm-strip
-
-          cd kernel
-          mkdir -p out
-
-          run_oldconfig() {
-            set +e
-            set +o pipefail
-            yes "" 2>/dev/null | make O=out oldconfig
-            rc=$?
-            set -o pipefail
-            set -e
-            return "$rc"
-          }
-
-          # Generate .config
-          make O=out "${{ inputs.defconfig }}"
-
-          # Prevent interactive prompts / EOF
-          if ! run_oldconfig; then
-            echo "ERROR: oldconfig failed" > error.log
-            exit 0
-          fi
-
-          if [ "${{ inputs.kernelsu_next }}" = "true" ]; then
-            echo "KernelSU-Next requested: enable + compat patches..."
-
-            # scripts/config convenience
-            if [ -f scripts/config ]; then
-              chmod +x scripts/config || true
-            fi
-
-            KSU_KCONFIG="drivers/kernelsu/Kconfig"
-            if [ ! -f "$KSU_KCONFIG" ]; then
-              echo "ERROR: KernelSU-Next selected but ${KSU_KCONFIG} not found." > error.log
-              exit 0
-            fi
-
-            KSU_SYM="$(awk '/^[[:space:]]*config[[:space:]]+/ {print $2; exit}' "$KSU_KCONFIG" 2>/dev/null || true)"
-            [ -z "$KSU_SYM" ] && KSU_SYM="KSU"
-            echo "Detected KernelSU symbol: CONFIG_${KSU_SYM}"
-
-            # Ensure Kconfig is sourced
-            if [ -f Kconfig ] && ! grep -qF 'source "drivers/kernelsu/Kconfig"' Kconfig; then
-              printf '\nsource "drivers/kernelsu/Kconfig"\n' >> Kconfig
-            fi
-            if [ -f drivers/Kconfig ] && ! grep -qF 'drivers/kernelsu/Kconfig' drivers/Kconfig; then
-              printf '\nsource "drivers/kernelsu/Kconfig"\n' >> drivers/Kconfig
-            fi
-
-            # Ensure build rule exists
-            if [ -f drivers/Makefile ] && [ -d drivers/kernelsu ] && ! grep -qE 'kernelsu/' drivers/Makefile; then
-              printf '\nobj-$(CONFIG_%s) += kernelsu/\n' "$KSU_SYM" >> drivers/Makefile
-            fi
-
-            if ! run_oldconfig; then
-              echo "ERROR: oldconfig after KernelSU wiring failed" > error.log
-              exit 0
-            fi
-
-            # Enable deps + KSU (depends on KPROBES)
-            if [ -f scripts/config ]; then
-              ./scripts/config --file out/.config -e KPROBES || true
-              ./scripts/config --file out/.config -e KALLSYMS || true
-              ./scripts/config --file out/.config -e KALLSYMS_ALL || true
-              ./scripts/config --file out/.config -e "${KSU_SYM}" || true
-            else
-              echo "CONFIG_KPROBES=y" >> out/.config
-              echo "CONFIG_KALLSYMS=y" >> out/.config
-              echo "CONFIG_KALLSYMS_ALL=y" >> out/.config
-              echo "CONFIG_${KSU_SYM}=y" >> out/.config
-            fi
-
-            if ! run_oldconfig; then
-              echo "ERROR: oldconfig after enabling KernelSU failed" > error.log
-              exit 0
-            fi
-
-            # Compat patch A: allowlist.c (TWA_RESUME + put_task_struct header)
-            if [ -f drivers/kernelsu/allowlist.c ] && ! grep -q 'KSU_NEXT_CI_COMPAT_ALLOWLIST' drivers/kernelsu/allowlist.c; then
-              perl -0777 -i -pe '
-                BEGIN {
-                  $p = "/* KSU_NEXT_CI_COMPAT_ALLOWLIST: CI compatibility for older kernels. */\n".
-                       "#ifndef TWA_RESUME\n#define TWA_RESUME 1\n#endif\n\n".
-                       "#if defined(__has_include)\n".
-                       "# if __has_include(<linux/sched/task.h>)\n#  include <linux/sched/task.h>\n".
-                       "# elif __has_include(<linux/sched.h>)\n#  include <linux/sched.h>\n# endif\n".
-                       "#else\n# include <linux/sched.h>\n#endif\n\n";
-                }
-                $_ = $p . $_;
-              ' drivers/kernelsu/allowlist.c
-            fi
-
-            # Compat patch B: sucompat.c (linux/pgtable.h missing -> fallback)
-            if [ -f drivers/kernelsu/sucompat.c ] && ! grep -q 'KSU_NEXT_CI_COMPAT_PGTABLE' drivers/kernelsu/sucompat.c; then
-              perl -0777 -i -pe '
-                my $blk =
-"/* KSU_NEXT_CI_COMPAT_PGTABLE: some kernels lack <linux/pgtable.h> */\n".
-"#if defined(__has_include)\n".
-"# if __has_include(<linux/pgtable.h>)\n#  include <linux/pgtable.h>\n".
-"# elif __has_include(<asm/pgtable.h>)\n#  include <asm/pgtable.h>\n".
-"# elif __has_include(<asm/pgtable_types.h>)\n#  include <asm/pgtable_types.h>\n".
-"# else\n#  include <linux/mm.h>\n# endif\n".
-"#else\n# include <asm/pgtable.h>\n#endif\n";
-                if (s{^\s*#include\s*<linux/pgtable\.h>\s*$}{$blk}m) { }
-                else { $_ = $blk . "\n" . $_; }
-              ' drivers/kernelsu/sucompat.c
-            fi
-
-            # Sanity checks
-            if ! grep -qE "^(CONFIG_${KSU_SYM}=|# CONFIG_${KSU_SYM} is not set)" out/.config; then
-              echo "ERROR: CONFIG_${KSU_SYM} not visible in out/.config (Kconfig not sourced)." > error.log
-              exit 0
-            fi
-            if ! grep -q '^CONFIG_KPROBES=y' out/.config; then
-              echo "ERROR: CONFIG_KPROBES is not enabled; KernelSU depends on it." > error.log
-              exit 0
-            fi
-            if ! grep -q "^CONFIG_${KSU_SYM}=y" out/.config; then
-              echo "ERROR: CONFIG_${KSU_SYM} could not be enabled (=y)." > error.log
-              exit 0
-            fi
-          fi
-
-          START="$(date +%s)"
-          if make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 2>&1 | tee build.log; then
-            echo "SUCCESS=1" >> "$GITHUB_ENV"
-          else
-            echo "SUCCESS=0" >> "$GITHUB_ENV"
-            cp -f build.log error.log
-          fi
-          END="$(date +%s)"
-          echo "BUILD_TIME=$((END-START))" >> "$GITHUB_ENV"
-
-          KVER="$(make -s kernelversion | tr -d "\n" || true)"
-          CLANG_VER="$(clang --version | head -n1 | tr -d "\n" || true)"
-          printf "KERNEL_VERSION=%s\n" "${KVER:-unknown}" >> "$GITHUB_ENV"
-          printf "CLANG_VERSION=%s\n" "${CLANG_VER:-unknown}" >> "$GITHUB_ENV"
-
-          ccache -s || true
+        run: ci/build_kernel.sh "${{ inputs.defconfig }}" "${{ inputs.kernelsu_next }}"
 
       - name: Detect GKI
         shell: bash
-        run: |
-          set -euo pipefail
-          if [ -f kernel/out/.config ] && grep -q '^CONFIG_GKI=y' kernel/out/.config; then
-            echo "KERNEL_TYPE=GKI" >> "$GITHUB_ENV"
-          else
-            echo "KERNEL_TYPE=NON-GKI" >> "$GITHUB_ENV"
-          fi
+        run: ci/detect_gki.sh
 
       - name: Ensure AnyKernel core exists
         if: env.SUCCESS == '1'
         shell: bash
-        run: |
-          set -euo pipefail
-          test -f anykernel/anykernel.sh || { echo "Missing: anykernel/anykernel.sh"; exit 1; }
-
-          if [ ! -f anykernel/tools/ak3-core.sh ]; then
-            rm -rf anykernel_upstream
-            git clone --depth=1 https://github.com/osm0sis/AnyKernel3 anykernel_upstream
-            rsync -a --exclude 'anykernel.sh' anykernel_upstream/ anykernel/
-            rm -rf anykernel_upstream
-          fi
-
-          chmod 755 anykernel/anykernel.sh || true
+        run: ci/ensure_anykernel_core.sh
 
       - name: Package AnyKernel3
         if: env.SUCCESS == '1'
         shell: bash
-        run: |
-          set -euo pipefail
-          BOOTDIR="kernel/out/arch/arm64/boot"
-          test -d "$BOOTDIR" || { echo "Missing boot dir: $BOOTDIR"; exit 1; }
-
-          rm -f anykernel/Image* anykernel/zImage 2>/dev/null || true
-
-          KIMG=""
-          for f in Image.gz-dtb Image-dtb Image.gz Image.lz4 Image zImage; do
-            if [ -f "${BOOTDIR}/${f}" ]; then
-              KIMG="$f"
-              cp -f "${BOOTDIR}/${f}" "anykernel/${f}"
-              break
-            fi
-          done
-
-          if [ -z "$KIMG" ]; then
-            echo "No kernel image found in ${BOOTDIR}"
-            ls -la "$BOOTDIR" || true
-            exit 1
-          fi
-
-          KSTR="Custom Kernel ${{ inputs.device }} ${KERNEL_VERSION}"
-          KSTR_ESC="${KSTR//&/\\&}"
-          sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/anykernel.sh
-          sed -i "s|^[[:space:]]*device.name1=.*|device.name1=${{ inputs.device }}|" anykernel/anykernel.sh
-
-          ZIP_NAME="Kernel-${{ inputs.device }}-${{ github.run_id }}-${{ github.run_attempt }}.zip"
-          (cd anykernel && zip -r9 "../${ZIP_NAME}" . -x "*.git*" )
-
-          echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
-          echo "KERNEL_IMAGE_FILE=${KIMG}" >> "$GITHUB_ENV"
+        run: ci/package_anykernel.sh "${{ inputs.device }}"
 
       - name: Upload artifacts
         if: always()
@@ -373,31 +137,12 @@ jobs:
       - name: Telegram Success
         if: ${{ env.SUCCESS == '1' && env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
-        run: |
-          set -euo pipefail
-          MSG=$'Kernel Build Success\nDevice: ${{ inputs.device }}\nType: '"$KERNEL_TYPE"$'\nLinux: '"$KERNEL_VERSION"$'\nToolchain: '"$CLANG_VERSION"$'\nTime: '"$BUILD_TIME"'s\nImage: '"$KERNEL_IMAGE_FILE"$'\nArtifact: '"$ZIP_NAME"
-          curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT_ID}" \
-            --data-urlencode text="$MSG"
-
-          curl -sS -F chat_id="$TG_CHAT_ID" \
-            -F document=@"${ZIP_NAME}" \
-            "https://api.telegram.org/bot${TG_TOKEN}/sendDocument"
-
-          curl -sS -F chat_id="$TG_CHAT_ID" \
-            -F document=@kernel/build.log \
-            "https://api.telegram.org/bot${TG_TOKEN}/sendDocument"
+        run: ci/telegram.sh success "${{ inputs.device }}" "${{ inputs.kernelsu_next }}"
 
       - name: Telegram Failure
         if: ${{ env.SUCCESS == '0' && env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
-        run: |
-          set -euo pipefail
-          test -f kernel/error.log || cp -f kernel/build.log kernel/error.log || true
-          curl -sS -F chat_id="${TG_CHAT_ID}" \
-            -F document=@kernel/error.log \
-            -F caption="❌ Kernel build FAILED | Device=${{ inputs.device }} | KernelSU-Next=${{ inputs.kernelsu_next }}" \
-            "https://api.telegram.org/bot${TG_TOKEN}/sendDocument"
+        run: ci/telegram.sh failure "${{ inputs.device }}" "${{ inputs.kernelsu_next }}"
 
       - name: Mark workflow failed if kernel build failed
         if: env.SUCCESS == '0'
