@@ -142,39 +142,35 @@ jobs:
           # Generate .config
           make O=out "${{ inputs.defconfig }}"
 
-          # Config sync (non-interactive) + fallback without failing on `yes` SIGPIPE
-          if make O=out olddefconfig; then
-            :
-          else
-            set +e
-            set +o pipefail
-            yes "" 2>/dev/null | make O=out oldconfig
-            MAKE_RC="${PIPESTATUS[1]}"
-            set -o pipefail
-            set -e
-            if [ "$MAKE_RC" -ne 0 ]; then
-              echo "SUCCESS=0" >> "$GITHUB_ENV"
-              echo "oldconfig failed with code $MAKE_RC" > error.log
-              exit 0
-            fi
+          # Fully non-interactive config sync (prevents EOF / prompts on choice options)
+          # Make sure `yes` SIGPIPE doesn't fail the step under pipefail.
+          set +e
+          set +o pipefail
+          yes "" 2>/dev/null | make O=out oldconfig
+          CFG_RC="${PIPESTATUS[1]}"
+          set -o pipefail
+          set -e
+          if [ "$CFG_RC" -ne 0 ]; then
+            echo "SUCCESS=0" >> "$GITHUB_ENV"
+            echo "ERROR: oldconfig failed with code $CFG_RC" > error.log
+            exit 0
           fi
 
           # ---------------------------
-          # KernelSU-Next integration (fixes "config exists but not in .config")
+          # KernelSU-Next enable + compat patching
           # ---------------------------
           if [ "${{ inputs.kernelsu_next }}" = "true" ]; then
-            echo "KernelSU-Next requested: wiring Kconfig + enabling deps..."
+            echo "KernelSU-Next requested: wiring Kconfig/Makefile + enabling deps..."
 
-            # Make scripts/config usable even if not executable
+            # Ensure scripts/config usable
             if [ -f scripts/config ]; then
               chmod +x scripts/config || true
             fi
 
-            # Detect Kconfig and symbol
             KSU_KCONFIG="drivers/kernelsu/Kconfig"
             if [ ! -f "$KSU_KCONFIG" ]; then
               echo "SUCCESS=0" >> "$GITHUB_ENV"
-              echo "ERROR: KernelSU-Next selected but $KSU_KCONFIG not found." > error.log
+              echo "ERROR: KernelSU-Next selected but ${KSU_KCONFIG} not found." > error.log
               exit 0
             fi
 
@@ -182,8 +178,7 @@ jobs:
             [ -z "$KSU_SYM" ] && KSU_SYM="KSU"
             echo "Detected KernelSU symbol: CONFIG_${KSU_SYM}"
 
-            # 1) Ensure it is sourced by a Kconfig that is actually used.
-            # Some trees ignore drivers/Kconfig changes, so we also patch top-level Kconfig.
+            # Ensure Kconfig is sourced by something used by this tree
             if [ -f Kconfig ] && ! grep -qF 'source "drivers/kernelsu/Kconfig"' Kconfig; then
               printf '\nsource "drivers/kernelsu/Kconfig"\n' >> Kconfig
             fi
@@ -191,15 +186,25 @@ jobs:
               printf '\nsource "drivers/kernelsu/Kconfig"\n' >> drivers/Kconfig
             fi
 
-            # 2) Ensure the directory is built when enabled
-            if [ -f drivers/Makefile ] && [ -d drivers/kernelsu ] && ! grep -qE "kernelsu/" drivers/Makefile; then
+            # Ensure the directory is built when enabled
+            if [ -f drivers/Makefile ] && [ -d drivers/kernelsu ] && ! grep -qE 'kernelsu/' drivers/Makefile; then
               printf '\nobj-$(CONFIG_%s) += kernelsu/\n' "$KSU_SYM" >> drivers/Makefile
             fi
 
-            # Re-run olddefconfig to load new Kconfig sources
-            make O=out olddefconfig || true
+            # Re-sync config after introducing new Kconfig sources
+            set +e
+            set +o pipefail
+            yes "" 2>/dev/null | make O=out oldconfig
+            CFG2_RC="${PIPESTATUS[1]}"
+            set -o pipefail
+            set -e
+            if [ "$CFG2_RC" -ne 0 ]; then
+              echo "SUCCESS=0" >> "$GITHUB_ENV"
+              echo "ERROR: oldconfig after KSU wiring failed with code $CFG2_RC" > error.log
+              exit 0
+            fi
 
-            # 3) Enable dependencies and KernelSU itself
+            # Enable deps + KSU as built-in (KSU depends on KPROBES)
             if [ -f scripts/config ]; then
               ./scripts/config --file out/.config -e KPROBES || true
               ./scripts/config --file out/.config -e KALLSYMS || true
@@ -212,57 +217,89 @@ jobs:
               echo "CONFIG_${KSU_SYM}=y" >> out/.config
             fi
 
-            make O=out olddefconfig || true
+            # Apply config changes
+            set +e
+            set +o pipefail
+            yes "" 2>/dev/null | make O=out oldconfig
+            CFG3_RC="${PIPESTATUS[1]}"
+            set -o pipefail
+            set -e
+            if [ "$CFG3_RC" -ne 0 ]; then
+              echo "SUCCESS=0" >> "$GITHUB_ENV"
+              echo "ERROR: oldconfig after enabling KSU failed with code $CFG3_RC" > error.log
+              exit 0
+            fi
 
-            echo "KSU visibility check:"
+            echo "KSU line:"
             grep -E "^(CONFIG_${KSU_SYM}=|# CONFIG_${KSU_SYM} is not set)" out/.config || true
-            echo "Deps check:"
+            echo "KPROBES line:"
             grep -E "^(CONFIG_KPROBES=|# CONFIG_KPROBES is not set)" out/.config || true
 
-            # A) If symbol is STILL not present in .config, it is still not being sourced.
             if ! grep -qE "^(CONFIG_${KSU_SYM}=|# CONFIG_${KSU_SYM} is not set)" out/.config; then
               echo "SUCCESS=0" >> "$GITHUB_ENV"
-              {
-                echo "ERROR: KernelSU-Next selected but CONFIG_${KSU_SYM} is not visible in out/.config."
-                echo "This means drivers/kernelsu/Kconfig is not being sourced into this kernel's Kconfig tree."
-                echo "We attempted to add: source \"drivers/kernelsu/Kconfig\" to Kconfig and drivers/Kconfig."
-                echo
-                echo "Kconfig path: $KSU_KCONFIG"
-                echo "Symbol:      $KSU_SYM"
-              } > error.log
+              echo "ERROR: CONFIG_${KSU_SYM} is not visible in out/.config (Kconfig still not sourced)." > error.log
               exit 0
             fi
-
-            # B) If KPROBES can't be enabled, KSU can't be enabled (it depends on KPROBES)
             if ! grep -q '^CONFIG_KPROBES=y' out/.config; then
               echo "SUCCESS=0" >> "$GITHUB_ENV"
-              {
-                echo "ERROR: KernelSU-Next selected but CONFIG_KPROBES could not be enabled."
-                echo "KernelSU depends on KPROBES, so KernelSU cannot be enabled."
-                echo
-                echo "KPROBES line:"
-                grep -E "^(CONFIG_KPROBES=|# CONFIG_KPROBES is not set)" out/.config || true
-                echo
-                echo "KSU line:"
-                grep -E "^(CONFIG_${KSU_SYM}=|# CONFIG_${KSU_SYM} is not set)" out/.config || true
-              } > error.log
+              echo "ERROR: CONFIG_KPROBES could not be enabled; KernelSU depends on KPROBES." > error.log
               exit 0
             fi
-
-            # C) Finally, require KernelSU built-in (=y)
             if ! grep -q "^CONFIG_${KSU_SYM}=y" out/.config; then
               echo "SUCCESS=0" >> "$GITHUB_ENV"
-              {
-                echo "ERROR: KernelSU-Next selected but CONFIG_${KSU_SYM} could not be enabled (=y)."
-                echo "It may still be blocked by dependencies other than KPROBES."
-                echo
-                echo "KSU line:"
-                grep -E "^(CONFIG_${KSU_SYM}=|# CONFIG_${KSU_SYM} is not set)" out/.config || true
-              } > error.log
+              echo "ERROR: CONFIG_${KSU_SYM} could not be enabled (=y)." > error.log
               exit 0
             fi
 
-            echo "KernelSU enabled: CONFIG_${KSU_SYM}=y"
+            # ---- KernelSU-Next compatibility patch for older kernels (5.4 etc) ----
+            # Fixes: TWA_RESUME missing, put_task_struct undeclared
+            if [ -f drivers/kernelsu/allowlist.c ]; then
+              python3 - <<'PY'
+from pathlib import Path
+
+p = Path("drivers/kernelsu/allowlist.c")
+s = p.read_text(errors="ignore")
+marker = "KSU_NEXT_CI_COMPAT"
+if marker in s:
+    print("KernelSU compat patch already applied.")
+    raise SystemExit(0)
+
+compat = r'''
+/* KSU_NEXT_CI_COMPAT: CI compatibility for older kernels/toolchains.
+ * - Older kernels may not define TWA_RESUME (task_work notify mode).
+ * - Some trees require <linux/sched/task.h> for put_task_struct().
+ */
+#ifndef TWA_RESUME
+#define TWA_RESUME 1
+#endif
+
+#if defined(__has_include)
+# if __has_include(<linux/sched/task.h>)
+#  include <linux/sched/task.h>
+# elif __has_include(<linux/sched.h>)
+#  include <linux/sched.h>
+# endif
+#else
+# include <linux/sched.h>
+#endif
+'''
+
+lines = s.splitlines(True)
+
+# insert after initial include block (first ~200 lines)
+insert_at = 0
+last_inc = -1
+for i, line in enumerate(lines[:200]):
+    if line.lstrip().startswith("#include"):
+        last_inc = i
+if last_inc != -1:
+    insert_at = last_inc + 1
+
+lines.insert(insert_at, compat + "\n")
+p.write_text("".join(lines))
+print("Applied KernelSU allowlist.c compatibility patch.")
+PY
+            fi
           fi
 
           START="$(date +%s)"
