@@ -6,7 +6,6 @@
 # ------------------------------------------------------------
 # AnyKernel "properties" block
 # These dotted keys are read by AK3 core; do NOT use them as shell vars.
-# Universal defaults: no device restriction, cleanup on success.
 # ------------------------------------------------------------
 properties() {
 kernel.string=Custom Kernel
@@ -15,12 +14,9 @@ do.modules=0
 do.cleanup=1
 do.cleanuponabort=0
 
-# If you want device restriction later, set do.devicecheck=1 and fill:
+# Optional (disable universal behavior if you enable devicecheck):
 # device.name1=moonstone
 # device.name2=
-
-# Leave unset for universality; AK3/core usually handles slot logic itself.
-# is_slot_device=1
 
 # Optional: hardcode boot block if you know it:
 # block=/dev/block/bootdevice/by-name/boot
@@ -37,18 +33,19 @@ else
 fi
 
 # ------------------------------------------------------------
-# Universal printing helpers (work even if colors/unicode fail)
+# Universal printing helpers
 # ------------------------------------------------------------
+_has() { command -v "$1" >/dev/null 2>&1; }
+
 _print() {
-  # ui_print is provided by AK3; fallback to echo if not present
-  if command -v ui_print >/dev/null 2>&1; then
+  if _has ui_print; then
     ui_print "$1"
   else
     echo "$1"
   fi
 }
 
-# Default to plain output for universality; you can flip these to 1
+# Default to plain output for universality
 USE_COLOR=0
 USE_UNICODE=0
 
@@ -88,7 +85,7 @@ progress 5 "Initializing"
 success "Environment ready"
 
 # ------------------------------------------------------------
-# Device info (best-effort, universal)
+# Device info (best-effort)
 # ------------------------------------------------------------
 MODEL="$(getprop ro.product.model 2>/dev/null)"
 CODENAME="$(getprop ro.product.device 2>/dev/null)"
@@ -103,7 +100,7 @@ progress 10 "Reading device information"
 success "Device info loaded"
 
 # ------------------------------------------------------------
-# Slot info (informational only; universal)
+# Slot info (informational only)
 # ------------------------------------------------------------
 progress 15 "Detecting slot"
 SLOT_SUFFIX="$(getprop ro.boot.slot_suffix 2>/dev/null)"
@@ -116,16 +113,33 @@ fi
 
 # ------------------------------------------------------------
 # Boot block detection (universal)
+# Prefer slot-specific boot_a/boot_b if slot suffix exists.
 # ------------------------------------------------------------
 progress 20 "Detecting boot partition block device"
 
-# If not set by properties(), auto-detect:
-if [ -z "${block:-}" ]; then
-  # Preferred: AK3 helper
+if [ -z "${block:-}" ] && _has find_block && [ -n "$SLOT_SUFFIX" ]; then
+  block="$(find_block "boot${SLOT_SUFFIX}" 2>/dev/null)"
+fi
+
+if [ -z "${block:-}" ] && _has find_block; then
   block="$(find_block boot 2>/dev/null)"
 fi
 
 # Fallbacks for recoveries where find_block is limited:
+if [ -z "${block:-}" ]; then
+  # Try slot-specific by-name paths if we have suffix
+  if [ -n "$SLOT_SUFFIX" ]; then
+    for p in \
+      "/dev/block/bootdevice/by-name/boot${SLOT_SUFFIX}" \
+      "/dev/block/by-name/boot${SLOT_SUFFIX}" \
+      /dev/block/platform/*/by-name/boot"${SLOT_SUFFIX}" \
+      /dev/block/platform/*/*/by-name/boot"${SLOT_SUFFIX}"
+    do
+      [ -e "$p" ] && block="$p" && break
+    done
+  fi
+fi
+
 if [ -z "${block:-}" ]; then
   for p in \
     /dev/block/bootdevice/by-name/boot \
@@ -133,18 +147,8 @@ if [ -z "${block:-}" ]; then
     /dev/block/platform/*/by-name/boot \
     /dev/block/platform/*/*/by-name/boot
   do
-    if [ -e "$p" ]; then
-      block="$p"
-      break
-    fi
+    [ -e "$p" ] && block="$p" && break
   done
-fi
-
-# Slot-specific by-name fallback (boot_a/boot_b) if we have a suffix:
-if [ -z "${block:-}" ] && [ -n "$SLOT_SUFFIX" ]; then
-  # SLOT_SUFFIX usually like "_a"
-  NAME="boot${SLOT_SUFFIX}"
-  block="$(find_block "$NAME" 2>/dev/null)"
 fi
 
 [ -z "${block:-}" ] && abort "ERROR: Could not detect boot partition block device. Set 'block=' in properties()."
