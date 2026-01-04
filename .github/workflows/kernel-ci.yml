@@ -97,14 +97,14 @@ jobs:
           echo "KernelSU-Next patch applied. git status:"
           git status --porcelain || true
 
-      - name: Patch unsupported Polly flags (auto)
+      - name: Patch unsupported Polly flags
         shell: bash
         run: |
           set -euo pipefail
           export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
 
           if grep -RIn --include='Makefile*' --include='*.mk' --include='*.make' -- '-polly-' kernel >/dev/null 2>&1; then
-            echo "Found -polly-* flags in kernel tree. Checking toolchain compatibility..."
+            echo "Found -polly-* flags. Checking toolchain compatibility..."
             if ! clang -c -x c /dev/null -o /tmp/polly_test.o -polly-reschedule=1 >/dev/null 2>&1; then
               echo "Clang does not accept -polly-*. Stripping from Makefiles..."
               find kernel -type f \( -name 'Makefile' -o -name 'Makefile.*' -o -name '*.mk' -o -name '*.make' \) -print0 \
@@ -148,27 +148,32 @@ jobs:
           cd kernel
           mkdir -p out
 
+          run_oldconfig() {
+            # non-interactive oldconfig; ignore `yes` SIGPIPE but keep make exit code
+            set +e
+            set +o pipefail
+            yes "" 2>/dev/null | make O=out oldconfig
+            local rc="${PIPESTATUS[1]}"
+            set -o pipefail
+            set -e
+            return "$rc"
+          }
+
           # Generate .config
           make O=out "${{ inputs.defconfig }}"
 
-          # Fully non-interactive config sync:
-          # Prevents EOF on new Kconfig questions; ignores `yes` SIGPIPE safely.
-          set +e
-          set +o pipefail
-          yes "" 2>/dev/null | make O=out oldconfig
-          CFG_RC="${PIPESTATUS[1]}"
-          set -o pipefail
-          set -e
-          if [ "$CFG_RC" -ne 0 ]; then
+          # Prevent interactive prompts / EOF
+          if ! run_oldconfig; then
             echo "SUCCESS=0" >> "$GITHUB_ENV"
-            echo "ERROR: oldconfig failed with code $CFG_RC" > error.log
+            echo "ERROR: oldconfig failed" > error.log
             exit 0
           fi
 
+          # KernelSU-Next: wire Kconfig/Makefile + enable deps + compat patch for older kernels
           if [ "${{ inputs.kernelsu_next }}" = "true" ]; then
-            echo "KernelSU-Next requested: wiring Kconfig + enabling deps..."
+            echo "KernelSU-Next requested: enabling and applying compat if needed..."
 
-            # Ensure scripts/config usable
+            # scripts/config convenience
             if [ -f scripts/config ]; then
               chmod +x scripts/config || true
             fi
@@ -184,7 +189,7 @@ jobs:
             [ -z "$KSU_SYM" ] && KSU_SYM="KSU"
             echo "Detected KernelSU symbol: CONFIG_${KSU_SYM}"
 
-            # Ensure Kconfig is actually sourced
+            # Ensure Kconfig is sourced
             if [ -f Kconfig ] && ! grep -qF 'source "drivers/kernelsu/Kconfig"' Kconfig; then
               printf '\nsource "drivers/kernelsu/Kconfig"\n' >> Kconfig
             fi
@@ -192,21 +197,14 @@ jobs:
               printf '\nsource "drivers/kernelsu/Kconfig"\n' >> drivers/Kconfig
             fi
 
-            # Ensure the directory is built when enabled
+            # Ensure build rule exists
             if [ -f drivers/Makefile ] && [ -d drivers/kernelsu ] && ! grep -qE 'kernelsu/' drivers/Makefile; then
               printf '\nobj-$(CONFIG_%s) += kernelsu/\n' "$KSU_SYM" >> drivers/Makefile
             fi
 
-            # Re-run oldconfig after introducing new Kconfig sources (non-interactive)
-            set +e
-            set +o pipefail
-            yes "" 2>/dev/null | make O=out oldconfig
-            CFG2_RC="${PIPESTATUS[1]}"
-            set -o pipefail
-            set -e
-            if [ "$CFG2_RC" -ne 0 ]; then
+            if ! run_oldconfig; then
               echo "SUCCESS=0" >> "$GITHUB_ENV"
-              echo "ERROR: oldconfig after KSU wiring failed with code $CFG2_RC" > error.log
+              echo "ERROR: oldconfig after KernelSU wiring failed" > error.log
               exit 0
             fi
 
@@ -223,69 +221,42 @@ jobs:
               echo "CONFIG_${KSU_SYM}=y" >> out/.config
             fi
 
-            set +e
-            set +o pipefail
-            yes "" 2>/dev/null | make O=out oldconfig
-            CFG3_RC="${PIPESTATUS[1]}"
-            set -o pipefail
-            set -e
-            if [ "$CFG3_RC" -ne 0 ]; then
+            if ! run_oldconfig; then
               echo "SUCCESS=0" >> "$GITHUB_ENV"
-              echo "ERROR: oldconfig after enabling KSU failed with code $CFG3_RC" > error.log
+              echo "ERROR: oldconfig after enabling KernelSU failed" > error.log
               exit 0
             fi
 
-            echo "KSU line:"
-            grep -E "^(CONFIG_${KSU_SYM}=|# CONFIG_${KSU_SYM} is not set)" out/.config || true
-            echo "KPROBES line:"
-            grep -E "^(CONFIG_KPROBES=|# CONFIG_KPROBES is not set)" out/.config || true
+            # Apply KernelSU-Next compat patch for 5.4-style kernels
+            # Fixes: TWA_RESUME undeclared, put_task_struct implicit
+            if [ -f drivers/kernelsu/allowlist.c ] && ! grep -q 'KSU_NEXT_CI_COMPAT' drivers/kernelsu/allowlist.c; then
+              perl -0777 -i -pe 'BEGIN{
+                $p = "/* KSU_NEXT_CI_COMPAT: CI compatibility for older kernels/toolchains. */\n".
+                     "#ifndef TWA_RESUME\n#define TWA_RESUME 1\n#endif\n\n".
+                     "#if defined(__has_include)\n".
+                     "# if __has_include(<linux/sched/task.h>)\n#  include <linux/sched/task.h>\n".
+                     "# elif __has_include(<linux/sched.h>)\n#  include <linux/sched.h>\n# endif\n".
+                     "#else\n# include <linux/sched.h>\n#endif\n\n";
+              }
+              if (index($_, "KSU_NEXT_CI_COMPAT") < 0) { $_ = $p.$_; }' drivers/kernelsu/allowlist.c
+              echo "Applied KernelSU allowlist.c compat patch."
+            fi
 
-            # KernelSU compile compatibility patch for older kernels (e.g. 5.4)
-            # Fixes: TWA_RESUME missing, put_task_struct undeclared
-            if [ -f drivers/kernelsu/allowlist.c ]; then
-              python3 - <<'PY'
-from pathlib import Path
-
-p = Path("drivers/kernelsu/allowlist.c")
-s = p.read_text(errors="ignore")
-marker = "KSU_NEXT_CI_COMPAT"
-if marker in s:
-    print("KernelSU compat patch already applied.")
-    raise SystemExit(0)
-
-compat = r'''
-/* KSU_NEXT_CI_COMPAT: CI compatibility for older kernels/toolchains.
- * - Older kernels may not define TWA_RESUME (task_work notify mode).
- * - Some trees require <linux/sched/task.h> for put_task_struct().
- */
-#ifndef TWA_RESUME
-#define TWA_RESUME 1
-#endif
-
-#if defined(__has_include)
-# if __has_include(<linux/sched/task.h>)
-#  include <linux/sched/task.h>
-# elif __has_include(<linux/sched.h>)
-#  include <linux/sched.h>
-# endif
-#else
-# include <linux/sched.h>
-#endif
-'''
-
-lines = s.splitlines(True)
-
-# insert after initial include block (first ~200 lines)
-last_inc = -1
-for i, line in enumerate(lines[:200]):
-    if line.lstrip().startswith("#include"):
-        last_inc = i
-
-insert_at = last_inc + 1 if last_inc != -1 else 0
-lines.insert(insert_at, compat + "\n")
-p.write_text("".join(lines))
-print("Applied KernelSU allowlist.c compatibility patch.")
-PY
+            # Final sanity checks (fail gracefully, preserve pipeline behavior)
+            if ! grep -qE "^(CONFIG_${KSU_SYM}=|# CONFIG_${KSU_SYM} is not set)" out/.config; then
+              echo "SUCCESS=0" >> "$GITHUB_ENV"
+              echo "ERROR: CONFIG_${KSU_SYM} is not visible in out/.config (Kconfig not sourced)." > error.log
+              exit 0
+            fi
+            if ! grep -q '^CONFIG_KPROBES=y' out/.config; then
+              echo "SUCCESS=0" >> "$GITHUB_ENV"
+              echo "ERROR: CONFIG_KPROBES is not enabled; KernelSU depends on it." > error.log
+              exit 0
+            fi
+            if ! grep -q "^CONFIG_${KSU_SYM}=y" out/.config; then
+              echo "SUCCESS=0" >> "$GITHUB_ENV"
+              echo "ERROR: CONFIG_${KSU_SYM} could not be enabled (=y)." > error.log
+              exit 0
             fi
           fi
 
