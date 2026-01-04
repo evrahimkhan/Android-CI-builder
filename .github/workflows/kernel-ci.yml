@@ -89,6 +89,30 @@ jobs:
           cd kernel
           curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
 
+      - name: Patch unsupported Polly flags (auto)
+        run: |
+          set -euo pipefail
+          export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
+
+          # Only touch build-system files
+          if grep -RIn --include='Makefile*' --include='*.mk' --include='*.make' -- '-polly-' kernel >/dev/null 2>&1; then
+            echo "Found -polly-* flags in kernel tree. Checking toolchain compatibility..."
+
+            # If clang rejects polly flags (common), strip them to keep build working.
+            # (These are optimization flags; stripping prevents hard failure.)
+            if ! clang -c -x c /dev/null -o /tmp/polly_test.o -polly-reschedule=1 >/dev/null 2>&1; then
+              echo "Clang does not accept -polly-*. Stripping from Makefiles..."
+              find kernel -type f \( -name 'Makefile' -o -name 'Makefile.*' -o -name '*.mk' -o -name '*.make' \) -print0 \
+                | xargs -0 sed -i -E \
+                  -e 's/[[:space:]]-mllvm[[:space:]]+-polly-[^[:space:]]+//g' \
+                  -e 's/[[:space:]]-polly-[^[:space:]]+//g'
+            else
+              echo "Clang accepts -polly-*; leaving flags untouched."
+            fi
+          else
+            echo "No -polly-* flags found."
+          fi
+
       - name: Telegram Build Start
         if: ${{ env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         run: |
@@ -116,7 +140,12 @@ jobs:
 
           cd kernel
           mkdir -p out
+
+          # Generate .config
           make O=out "${{ inputs.defconfig }}"
+
+          # Non-interactive config sync (fixes CI prompts / EOF)
+          yes "" | make O=out oldconfig
 
           START="$(date +%s)"
           if make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 2>&1 | tee build.log; then
@@ -163,7 +192,6 @@ jobs:
         if: env.SUCCESS == '1'
         run: |
           set -euo pipefail
-
           BOOTDIR="kernel/out/arch/arm64/boot"
           test -d "$BOOTDIR" || { echo "Missing boot dir: $BOOTDIR"; exit 1; }
 
@@ -184,7 +212,6 @@ jobs:
             exit 1
           fi
 
-          # Stamp info without breaking universal installer
           KSTR="Custom Kernel ${{ inputs.device }} ${KERNEL_VERSION}"
           KSTR_ESC="${KSTR//&/\\&}"
           sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/anykernel.sh
