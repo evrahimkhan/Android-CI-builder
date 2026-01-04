@@ -6,14 +6,10 @@
 # ------------------------------------------------------------
 # Pre-core boot partition detection
 # Fixes: "Unable to determine partition. Aborting..."
-# We set 'block' (and sometimes 'is_slot_device') BEFORE sourcing ak3-core.sh
 # ------------------------------------------------------------
-
-# best-effort slot suffix (A/B devices usually have "_a" or "_b")
 SLOT_SUFFIX="$(getprop ro.boot.slot_suffix 2>/dev/null)"
 
 detect_byname() {
-  # $1 = partition name (e.g., boot, boot_a)
   local n="$1" p
   for p in \
     "/dev/block/bootdevice/by-name/$n" \
@@ -30,9 +26,6 @@ detect_byname() {
 AK3_BLOCK=""
 AK3_IS_SLOT_DEVICE=""
 
-# Prefer unsuffixed boot if present, otherwise use boot_a/boot_b if present.
-# Important: If we pick a suffixed path (boot_a), we set is_slot_device=0
-# so AK3 core doesn't append the suffix again.
 if [ -n "$SLOT_SUFFIX" ]; then
   p="$(detect_byname boot 2>/dev/null || true)"
   if [ -n "$p" ]; then
@@ -53,17 +46,11 @@ else
   fi
 fi
 
-# Export as normal shell vars that AK3 core uses
-if [ -n "$AK3_BLOCK" ]; then
-  block="$AK3_BLOCK"
-fi
-if [ -n "$AK3_IS_SLOT_DEVICE" ]; then
-  is_slot_device="$AK3_IS_SLOT_DEVICE"
-fi
+[ -n "$AK3_BLOCK" ] && block="$AK3_BLOCK"
+[ -n "$AK3_IS_SLOT_DEVICE" ] && is_slot_device="$AK3_IS_SLOT_DEVICE"
 
 # ------------------------------------------------------------
 # AnyKernel properties
-# These keys are read by AK3 core (not shell variables).
 # ------------------------------------------------------------
 properties() {
 cat <<'EOF'
@@ -73,18 +60,12 @@ do.modules=0
 do.cleanup=1
 do.cleanuponabort=0
 
-# Optional (kept for compatibility / future enabling of devicecheck)
 device.name1=universal
 device.name2=
 EOF
 
-# Provide block/is_slot_device if we detected them pre-core
-if [ -n "${AK3_BLOCK:-}" ]; then
-  printf 'block=%s\n' "$AK3_BLOCK"
-fi
-if [ -n "${AK3_IS_SLOT_DEVICE:-}" ]; then
-  printf 'is_slot_device=%s\n' "$AK3_IS_SLOT_DEVICE"
-fi
+[ -n "${AK3_BLOCK:-}" ] && printf 'block=%s\n' "$AK3_BLOCK"
+[ -n "${AK3_IS_SLOT_DEVICE:-}" ] && printf 'is_slot_device=%s\n' "$AK3_IS_SLOT_DEVICE"
 }
 
 # ------------------------------------------------------------
@@ -103,14 +84,9 @@ fi
 _has() { command -v "$1" >/dev/null 2>&1; }
 
 _print() {
-  if _has ui_print; then
-    ui_print "$1"
-  else
-    echo "$1"
-  fi
+  if _has ui_print; then ui_print "$1"; else echo "$1"; fi
 }
 
-# Default to plain output for universality
 USE_COLOR=0
 USE_UNICODE=0
 
@@ -138,18 +114,13 @@ header() {
   _print "${BLUE}${BAR}${NC}"
 }
 
-# Read kernel.string for display
 KERNEL_LABEL="$(grep -m1 '^kernel.string=' "$0" 2>/dev/null | cut -d= -f2-)"
 [ -z "$KERNEL_LABEL" ] && KERNEL_LABEL="Custom Kernel"
 
-# ------------------------------------------------------------
-# Start
-# ------------------------------------------------------------
 header "AnyKernel3 Universal Installer"
 progress 5 "Initializing"
 success "Environment ready"
 
-# Device info (best-effort)
 MODEL="$(getprop ro.product.model 2>/dev/null)"
 CODENAME="$(getprop ro.product.device 2>/dev/null)"
 ANDROID="$(getprop ro.build.version.release 2>/dev/null)"
@@ -162,7 +133,6 @@ progress 10 "Reading device information"
 [ -n "$ROM" ] && _print "ROM:      $ROM"
 success "Device info loaded"
 
-# Slot info (informational)
 progress 15 "Detecting slot"
 if [ -n "$SLOT_SUFFIX" ]; then
   _print "Active slot suffix: $SLOT_SUFFIX"
@@ -171,7 +141,6 @@ else
   warn "No slot suffix reported (may be A-only)"
 fi
 
-# Boot block info (now should be set early enough for AK3 core)
 progress 20 "Boot partition"
 if [ -n "${block:-}" ]; then
   _print "Boot block: $block"
@@ -180,21 +149,16 @@ else
   warn "Boot block not resolved (core may still attempt autodetect)"
 fi
 
-# Kernel image detection
 progress 25 "Detecting kernel image"
 KERNEL_IMAGE=""
 for f in Image.gz-dtb Image-dtb Image.gz Image.lz4 Image zImage; do
-  if [ -f "$f" ]; then
-    KERNEL_IMAGE="$f"
-    break
-  fi
+  [ -f "$f" ] && KERNEL_IMAGE="$f" && break
 done
 [ -z "$KERNEL_IMAGE" ] && abort "ERROR: No kernel image found in zip (expected Image*, zImage)."
 
 _print "Kernel image file: $KERNEL_IMAGE"
 success "Kernel image detected"
 
-# Boot image flow
 progress 40 "Dumping boot image"
 dump_boot
 success "Boot image dumped"
@@ -215,7 +179,6 @@ progress 95 "Flashing boot"
 flash_boot
 success "Boot flashed"
 
-# Summary
 progress 100 "Finalizing"
 header "Flash Summary"
 [ -n "$MODEL" ] && _print "Device:  $MODEL"
