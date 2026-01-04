@@ -160,104 +160,109 @@ jobs:
           fi
 
           # ---------------------------
-          # KernelSU-Next integration (robust, universal-ish)
+          # KernelSU-Next integration (fixes "config exists but not in .config")
           # ---------------------------
           if [ "${{ inputs.kernelsu_next }}" = "true" ]; then
-            echo "KernelSU-Next requested: verifying Kconfig integration & enabling..."
+            echo "KernelSU-Next requested: wiring Kconfig + enabling deps..."
 
-            # Ensure scripts/config is executable if present
-            [ -f scripts/config ] && chmod +x scripts/config || true
-
-            # 1) Find KernelSU Kconfig path (commonly drivers/kernelsu/Kconfig)
-            KSU_KCONFIG=""
-            if [ -f drivers/kernelsu/Kconfig ]; then
-              KSU_KCONFIG="drivers/kernelsu/Kconfig"
-            else
-              KSU_KCONFIG="$(find drivers -maxdepth 5 -type f -name Kconfig 2>/dev/null | grep -i kernelsu | head -n1 || true)"
+            # Make scripts/config usable even if not executable
+            if [ -f scripts/config ]; then
+              chmod +x scripts/config || true
             fi
 
-            # If setup.sh used a different location, try broader search
-            if [ -z "$KSU_KCONFIG" ]; then
-              KSU_KCONFIG="$(find . -maxdepth 6 -type f -name Kconfig 2>/dev/null | grep -i kernelsu | head -n1 || true)"
-            fi
-
-            if [ -z "$KSU_KCONFIG" ]; then
+            # Detect Kconfig and symbol
+            KSU_KCONFIG="drivers/kernelsu/Kconfig"
+            if [ ! -f "$KSU_KCONFIG" ]; then
               echo "SUCCESS=0" >> "$GITHUB_ENV"
-              {
-                echo "ERROR: KernelSU-Next selected but no KernelSU Kconfig file was found."
-                echo "setup.sh ran, but the kernel tree doesn't contain a kernelsu*/Kconfig."
-                echo "Hints:"
-                echo "- The kernel may be incompatible with KernelSU-Next integration method."
-                echo "- Or setup.sh didn't patch this tree properly."
-              } > error.log
+              echo "ERROR: KernelSU-Next selected but $KSU_KCONFIG not found." > error.log
               exit 0
             fi
 
-            echo "Detected KernelSU Kconfig: $KSU_KCONFIG"
-
-            # 2) Ensure drivers/Kconfig sources it if it lives under drivers/
-            if [ -f drivers/Kconfig ] && [[ "$KSU_KCONFIG" == drivers/* ]]; then
-              if ! grep -qF "$KSU_KCONFIG" drivers/Kconfig; then
-                echo "Linking KernelSU Kconfig into drivers/Kconfig..."
-                printf '\nsource "%s"\n' "$KSU_KCONFIG" >> drivers/Kconfig
-              fi
-            fi
-
-            # 3) Detect main symbol name from that Kconfig
-            # Prefer common names first if present.
-            KSU_SYM="$(grep -m1 -E '^[[:space:]]*config[[:space:]]+(KSU_NEXT|KERNELSU|KSU)\b' "$KSU_KCONFIG" 2>/dev/null | awk '{print $2}' || true)"
-            if [ -z "$KSU_SYM" ]; then
-              KSU_SYM="$(grep -m1 -E '^[[:space:]]*config[[:space:]]+[A-Z0-9_]+' "$KSU_KCONFIG" 2>/dev/null | awk '{print $2}' || true)"
-            fi
+            KSU_SYM="$(awk '/^[[:space:]]*config[[:space:]]+/ {print $2; exit}' "$KSU_KCONFIG" 2>/dev/null || true)"
             [ -z "$KSU_SYM" ] && KSU_SYM="KSU"
-
             echo "Detected KernelSU symbol: CONFIG_${KSU_SYM}"
 
-            # 4) Ensure drivers/Makefile builds the subdir when CONFIG_<SYM>=y (if under drivers)
-            if [[ "$KSU_KCONFIG" == drivers/* ]] && [ -f drivers/Makefile ]; then
-              KSU_DIR="$(dirname "$KSU_KCONFIG")"
-              KSU_SUBDIR="$(basename "$KSU_DIR")"
-
-              if ! grep -qE "obj-\\$\\(CONFIG_${KSU_SYM}\\).*${KSU_SUBDIR}/" drivers/Makefile; then
-                echo "Linking KernelSU subdir into drivers/Makefile..."
-                printf '\nobj-$(CONFIG_%s) += %s/\n' "$KSU_SYM" "$KSU_SUBDIR" >> drivers/Makefile
-              fi
+            # 1) Ensure it is sourced by a Kconfig that is actually used.
+            # Some trees ignore drivers/Kconfig changes, so we also patch top-level Kconfig.
+            if [ -f Kconfig ] && ! grep -qF 'source "drivers/kernelsu/Kconfig"' Kconfig; then
+              printf '\nsource "drivers/kernelsu/Kconfig"\n' >> Kconfig
+            fi
+            if [ -f drivers/Kconfig ] && ! grep -qF 'drivers/kernelsu/Kconfig' drivers/Kconfig; then
+              printf '\nsource "drivers/kernelsu/Kconfig"\n' >> drivers/Kconfig
             fi
 
-            # 5) Refresh config now that Kconfig tree may have changed
+            # 2) Ensure the directory is built when enabled
+            if [ -f drivers/Makefile ] && [ -d drivers/kernelsu ] && ! grep -qE "kernelsu/" drivers/Makefile; then
+              printf '\nobj-$(CONFIG_%s) += kernelsu/\n' "$KSU_SYM" >> drivers/Makefile
+            fi
+
+            # Re-run olddefconfig to load new Kconfig sources
             make O=out olddefconfig || true
 
-            # 6) Force enable built-in (=y)
-            if [ -x scripts/config ]; then
-              scripts/config --file out/.config -e "$KSU_SYM" || true
+            # 3) Enable dependencies and KernelSU itself
+            if [ -f scripts/config ]; then
+              ./scripts/config --file out/.config -e KPROBES || true
+              ./scripts/config --file out/.config -e KALLSYMS || true
+              ./scripts/config --file out/.config -e KALLSYMS_ALL || true
+              ./scripts/config --file out/.config -e "${KSU_SYM}" || true
             else
+              echo "CONFIG_KPROBES=y" >> out/.config
+              echo "CONFIG_KALLSYMS=y" >> out/.config
+              echo "CONFIG_KALLSYMS_ALL=y" >> out/.config
               echo "CONFIG_${KSU_SYM}=y" >> out/.config
             fi
 
             make O=out olddefconfig || true
 
-            echo "KernelSU-related .config lines:"
+            echo "KSU visibility check:"
             grep -E "^(CONFIG_${KSU_SYM}=|# CONFIG_${KSU_SYM} is not set)" out/.config || true
+            echo "Deps check:"
+            grep -E "^(CONFIG_KPROBES=|# CONFIG_KPROBES is not set)" out/.config || true
 
-            # 7) If still not enabled, mark failure but keep pipeline functionality intact
-            if ! grep -q "^CONFIG_${KSU_SYM}=y" out/.config; then
+            # A) If symbol is STILL not present in .config, it is still not being sourced.
+            if ! grep -qE "^(CONFIG_${KSU_SYM}=|# CONFIG_${KSU_SYM} is not set)" out/.config; then
               echo "SUCCESS=0" >> "$GITHUB_ENV"
               {
-                echo "ERROR: KernelSU-Next selected but CONFIG_${KSU_SYM} could not be enabled."
-                echo "Detected Kconfig: $KSU_KCONFIG"
-                echo "Detected symbol:  $KSU_SYM"
+                echo "ERROR: KernelSU-Next selected but CONFIG_${KSU_SYM} is not visible in out/.config."
+                echo "This means drivers/kernelsu/Kconfig is not being sourced into this kernel's Kconfig tree."
+                echo "We attempted to add: source \"drivers/kernelsu/Kconfig\" to Kconfig and drivers/Kconfig."
                 echo
-                echo "Top lines from KernelSU Kconfig (for debugging):"
-                sed -n '1,120p' "$KSU_KCONFIG" || true
+                echo "Kconfig path: $KSU_KCONFIG"
+                echo "Symbol:      $KSU_SYM"
+              } > error.log
+              exit 0
+            fi
+
+            # B) If KPROBES can't be enabled, KSU can't be enabled (it depends on KPROBES)
+            if ! grep -q '^CONFIG_KPROBES=y' out/.config; then
+              echo "SUCCESS=0" >> "$GITHUB_ENV"
+              {
+                echo "ERROR: KernelSU-Next selected but CONFIG_KPROBES could not be enabled."
+                echo "KernelSU depends on KPROBES, so KernelSU cannot be enabled."
                 echo
-                echo "Matching .config lines:"
+                echo "KPROBES line:"
+                grep -E "^(CONFIG_KPROBES=|# CONFIG_KPROBES is not set)" out/.config || true
+                echo
+                echo "KSU line:"
                 grep -E "^(CONFIG_${KSU_SYM}=|# CONFIG_${KSU_SYM} is not set)" out/.config || true
               } > error.log
               exit 0
             fi
 
-            echo "KSU_SYMBOL=${KSU_SYM}" >> "$GITHUB_ENV"
-            echo "KernelSU-Next enabled: CONFIG_${KSU_SYM}=y"
+            # C) Finally, require KernelSU built-in (=y)
+            if ! grep -q "^CONFIG_${KSU_SYM}=y" out/.config; then
+              echo "SUCCESS=0" >> "$GITHUB_ENV"
+              {
+                echo "ERROR: KernelSU-Next selected but CONFIG_${KSU_SYM} could not be enabled (=y)."
+                echo "It may still be blocked by dependencies other than KPROBES."
+                echo
+                echo "KSU line:"
+                grep -E "^(CONFIG_${KSU_SYM}=|# CONFIG_${KSU_SYM} is not set)" out/.config || true
+              } > error.log
+              exit 0
+            fi
+
+            echo "KernelSU enabled: CONFIG_${KSU_SYM}=y"
           fi
 
           START="$(date +%s)"
