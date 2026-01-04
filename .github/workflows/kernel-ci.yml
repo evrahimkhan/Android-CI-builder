@@ -133,6 +133,9 @@ jobs:
           set -euo pipefail
           export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
 
+          # Ensure failures are always reflected in later steps
+          echo "SUCCESS=0" >> "$GITHUB_ENV"
+
           ccache -M 5G || true
           ccache -z || true
 
@@ -164,23 +167,20 @@ jobs:
 
           # Prevent interactive prompts / EOF
           if ! run_oldconfig; then
-            echo "SUCCESS=0" >> "$GITHUB_ENV"
             echo "ERROR: oldconfig failed" > error.log
             exit 0
           fi
 
-          # KernelSU-Next: wire Kconfig/Makefile + enable deps + compat patch for older kernels
+          # KernelSU-Next: wire Kconfig + enable deps + apply compat patches (older kernels)
           if [ "${{ inputs.kernelsu_next }}" = "true" ]; then
-            echo "KernelSU-Next requested: enabling and applying compat if needed..."
+            echo "KernelSU-Next requested: enabling + applying compat patches..."
 
-            # scripts/config convenience
             if [ -f scripts/config ]; then
               chmod +x scripts/config || true
             fi
 
             KSU_KCONFIG="drivers/kernelsu/Kconfig"
             if [ ! -f "$KSU_KCONFIG" ]; then
-              echo "SUCCESS=0" >> "$GITHUB_ENV"
               echo "ERROR: KernelSU-Next selected but ${KSU_KCONFIG} not found." > error.log
               exit 0
             fi
@@ -203,7 +203,6 @@ jobs:
             fi
 
             if ! run_oldconfig; then
-              echo "SUCCESS=0" >> "$GITHUB_ENV"
               echo "ERROR: oldconfig after KernelSU wiring failed" > error.log
               exit 0
             fi
@@ -222,39 +221,109 @@ jobs:
             fi
 
             if ! run_oldconfig; then
-              echo "SUCCESS=0" >> "$GITHUB_ENV"
               echo "ERROR: oldconfig after enabling KernelSU failed" > error.log
               exit 0
             fi
 
-            # Apply KernelSU-Next compat patch for 5.4-style kernels
-            # Fixes: TWA_RESUME undeclared, put_task_struct implicit
-            if [ -f drivers/kernelsu/allowlist.c ] && ! grep -q 'KSU_NEXT_CI_COMPAT' drivers/kernelsu/allowlist.c; then
-              perl -0777 -i -pe 'BEGIN{
-                $p = "/* KSU_NEXT_CI_COMPAT: CI compatibility for older kernels/toolchains. */\n".
-                     "#ifndef TWA_RESUME\n#define TWA_RESUME 1\n#endif\n\n".
-                     "#if defined(__has_include)\n".
-                     "# if __has_include(<linux/sched/task.h>)\n#  include <linux/sched/task.h>\n".
-                     "# elif __has_include(<linux/sched.h>)\n#  include <linux/sched.h>\n# endif\n".
-                     "#else\n# include <linux/sched.h>\n#endif\n\n";
-              }
-              if (index($_, "KSU_NEXT_CI_COMPAT") < 0) { $_ = $p.$_; }' drivers/kernelsu/allowlist.c
-              echo "Applied KernelSU allowlist.c compat patch."
+            # ---- Compat patch #1: allowlist.c (TWA_RESUME / put_task_struct) ----
+            if [ -f drivers/kernelsu/allowlist.c ]; then
+              python3 - <<'PY'
+from pathlib import Path
+p = Path("drivers/kernelsu/allowlist.c")
+s = p.read_text(errors="ignore")
+if "KSU_NEXT_CI_COMPAT_ALLOWLIST" in s:
+    raise SystemExit(0)
+
+compat = r'''
+/* KSU_NEXT_CI_COMPAT_ALLOWLIST: CI compatibility for older kernels.
+ * - Older kernels may not define TWA_RESUME (task_work notify mode).
+ * - Some trees require <linux/sched/task.h> for put_task_struct().
+ */
+#ifndef TWA_RESUME
+#define TWA_RESUME 1
+#endif
+
+#if defined(__has_include)
+# if __has_include(<linux/sched/task.h>)
+#  include <linux/sched/task.h>
+# elif __has_include(<linux/sched.h>)
+#  include <linux/sched.h>
+# endif
+#else
+# include <linux/sched.h>
+#endif
+'''
+
+lines = s.splitlines(True)
+last_inc = -1
+for i, line in enumerate(lines[:200]):
+    if line.lstrip().startswith("#include"):
+        last_inc = i
+insert_at = last_inc + 1 if last_inc != -1 else 0
+lines.insert(insert_at, compat + "\n")
+p.write_text("".join(lines))
+print("Patched allowlist.c for older kernels.")
+PY
             fi
 
-            # Final sanity checks (fail gracefully, preserve pipeline behavior)
+            # ---- Compat patch #2: sucompat.c (linux/pgtable.h missing on some vendor trees) ----
+            if [ -f drivers/kernelsu/sucompat.c ]; then
+              python3 - <<'PY'
+import re
+from pathlib import Path
+
+p = Path("drivers/kernelsu/sucompat.c")
+s = p.read_text(errors="ignore")
+
+if "KSU_NEXT_CI_COMPAT_PGTABLE" in s:
+    raise SystemExit(0)
+
+block = r'''/* KSU_NEXT_CI_COMPAT_PGTABLE: some kernels lack <linux/pgtable.h> */
+#if defined(__has_include)
+# if __has_include(<linux/pgtable.h>)
+#  include <linux/pgtable.h>
+# elif __has_include(<asm/pgtable.h>)
+#  include <asm/pgtable.h>
+# elif __has_include(<asm/pgtable_types.h>)
+#  include <asm/pgtable_types.h>
+# else
+#  include <linux/mm.h>
+# endif
+#else
+# include <asm/pgtable.h>
+#endif
+'''
+
+# Replace the failing include if present
+pat = r'^\s*#include\s*<linux/pgtable\.h>\s*$'
+s2, n = re.subn(pat, block, s, flags=re.M)
+
+# If not found, inject after includes as a fallback
+if n == 0:
+    lines = s.splitlines(True)
+    last_inc = -1
+    for i, line in enumerate(lines[:200]):
+        if line.lstrip().startswith("#include"):
+            last_inc = i
+    insert_at = last_inc + 1 if last_inc != -1 else 0
+    lines.insert(insert_at, block + "\n")
+    s2 = "".join(lines)
+
+p.write_text(s2)
+print("Patched sucompat.c pgtable include.")
+PY
+            fi
+
+            # Sanity checks
             if ! grep -qE "^(CONFIG_${KSU_SYM}=|# CONFIG_${KSU_SYM} is not set)" out/.config; then
-              echo "SUCCESS=0" >> "$GITHUB_ENV"
-              echo "ERROR: CONFIG_${KSU_SYM} is not visible in out/.config (Kconfig not sourced)." > error.log
+              echo "ERROR: CONFIG_${KSU_SYM} not visible in out/.config (Kconfig not sourced)." > error.log
               exit 0
             fi
             if ! grep -q '^CONFIG_KPROBES=y' out/.config; then
-              echo "SUCCESS=0" >> "$GITHUB_ENV"
               echo "ERROR: CONFIG_KPROBES is not enabled; KernelSU depends on it." > error.log
               exit 0
             fi
             if ! grep -q "^CONFIG_${KSU_SYM}=y" out/.config; then
-              echo "SUCCESS=0" >> "$GITHUB_ENV"
               echo "ERROR: CONFIG_${KSU_SYM} could not be enabled (=y)." > error.log
               exit 0
             fi
