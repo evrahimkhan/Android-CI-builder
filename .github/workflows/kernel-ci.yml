@@ -133,7 +133,7 @@ jobs:
           set -euo pipefail
           export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
 
-          # Ensure failures are always reflected in later steps
+          # default to failure; set to 1 only on successful build
           echo "SUCCESS=0" >> "$GITHUB_ENV"
 
           ccache -M 5G || true
@@ -152,11 +152,11 @@ jobs:
           mkdir -p out
 
           run_oldconfig() {
-            # non-interactive oldconfig; ignore `yes` SIGPIPE but keep make exit code
+            # non-interactive oldconfig; ignore `yes` SIGPIPE by disabling pipefail
             set +e
             set +o pipefail
             yes "" 2>/dev/null | make O=out oldconfig
-            local rc="${PIPESTATUS[1]}"
+            rc=$?
             set -o pipefail
             set -e
             return "$rc"
@@ -171,7 +171,7 @@ jobs:
             exit 0
           fi
 
-          # KernelSU-Next: wire Kconfig + enable deps + apply compat patches (older kernels)
+          # KernelSU-Next: wire Kconfig + enable deps + apply compat patches
           if [ "${{ inputs.kernelsu_next }}" = "true" ]; then
             echo "KernelSU-Next requested: enabling + applying compat patches..."
 
@@ -225,7 +225,7 @@ jobs:
               exit 0
             fi
 
-            # ---- Compat patch #1: allowlist.c (TWA_RESUME / put_task_struct) ----
+            # Compat patch #1: allowlist.c (TWA_RESUME / put_task_struct)
             if [ -f drivers/kernelsu/allowlist.c ]; then
               python3 - <<'PY'
 from pathlib import Path
@@ -236,8 +236,8 @@ if "KSU_NEXT_CI_COMPAT_ALLOWLIST" in s:
 
 compat = r'''
 /* KSU_NEXT_CI_COMPAT_ALLOWLIST: CI compatibility for older kernels.
- * - Older kernels may not define TWA_RESUME (task_work notify mode).
- * - Some trees require <linux/sched/task.h> for put_task_struct().
+ * - Older kernels may not define TWA_RESUME.
+ * - Some trees need <linux/sched/task.h> for put_task_struct().
  */
 #ifndef TWA_RESUME
 #define TWA_RESUME 1
@@ -266,7 +266,7 @@ print("Patched allowlist.c for older kernels.")
 PY
             fi
 
-            # ---- Compat patch #2: sucompat.c (linux/pgtable.h missing on some vendor trees) ----
+            # Compat patch #2: sucompat.c (linux/pgtable.h missing)
             if [ -f drivers/kernelsu/sucompat.c ]; then
               python3 - <<'PY'
 import re
@@ -294,11 +294,8 @@ block = r'''/* KSU_NEXT_CI_COMPAT_PGTABLE: some kernels lack <linux/pgtable.h> *
 #endif
 '''
 
-# Replace the failing include if present
 pat = r'^\s*#include\s*<linux/pgtable\.h>\s*$'
 s2, n = re.subn(pat, block, s, flags=re.M)
-
-# If not found, inject after includes as a fallback
 if n == 0:
     lines = s.splitlines(True)
     last_inc = -1
