@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       device:
-        description: Device codename
+        description: Device codename (for naming only)
         required: true
         type: string
       defconfig:
@@ -54,7 +54,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             bc bison build-essential ccache curl flex git \
-            libelf-dev libssl-dev make python3 rsync unzip wget zip zstd
+            libelf-dev libssl-dev make python3 rsync unzip wget zip zstd \
+            dwarves xz-utils
 
       - name: Restore Proton Clang cache
         uses: actions/cache@v4
@@ -132,10 +133,10 @@ jobs:
           END="$(date +%s)"
           echo "BUILD_TIME=$((END-START))" >> "$GITHUB_ENV"
 
-          KVER="$(make -s kernelversion | tr -d '\n')"
-          CLANG_VER="$(clang --version | head -n1 | tr -d '\n')"
-          printf "KERNEL_VERSION=%s\n" "$KVER" >> "$GITHUB_ENV"
-          printf "CLANG_VERSION=%s\n" "$CLANG_VER" >> "$GITHUB_ENV"
+          KVER="$(make -s kernelversion | tr -d '\n' || true)"
+          CLANG_VER="$(clang --version | head -n1 | tr -d '\n' || true)"
+          printf "KERNEL_VERSION=%s\n" "${KVER:-unknown}" >> "$GITHUB_ENV"
+          printf "CLANG_VERSION=%s\n" "${CLANG_VER:-unknown}" >> "$GITHUB_ENV"
 
           echo "ccache stats:"
           ccache -s || true
@@ -143,7 +144,7 @@ jobs:
       - name: Detect GKI
         run: |
           set -euo pipefail
-          if grep -q '^CONFIG_GKI=y' kernel/out/.config; then
+          if [ -f kernel/out/.config ] && grep -q '^CONFIG_GKI=y' kernel/out/.config; then
             echo "KERNEL_TYPE=GKI" >> "$GITHUB_ENV"
           else
             echo "KERNEL_TYPE=NON-GKI" >> "$GITHUB_ENV"
@@ -159,11 +160,11 @@ jobs:
           if [ ! -f anykernel/tools/ak3-core.sh ]; then
             rm -rf anykernel_upstream
             git clone --depth=1 https://github.com/osm0sis/AnyKernel3 anykernel_upstream
-
-            # Copy core structure in, but do NOT overwrite your custom anykernel.sh
             rsync -a --exclude 'anykernel.sh' anykernel_upstream/ anykernel/
             rm -rf anykernel_upstream
           fi
+
+          chmod 755 anykernel/anykernel.sh || true
 
       - name: Package AnyKernel3
         if: env.SUCCESS == '1'
@@ -173,8 +174,11 @@ jobs:
           BOOTDIR="kernel/out/arch/arm64/boot"
           test -d "$BOOTDIR" || { echo "Missing boot dir: $BOOTDIR"; exit 1; }
 
+          # Avoid shipping multiple images
+          rm -f anykernel/Image* anykernel/zImage 2>/dev/null || true
+
           KIMG=""
-          for f in Image.gz-dtb Image.gz Image.lz4 Image; do
+          for f in Image.gz-dtb Image-dtb Image.gz Image.lz4 Image zImage; do
             if [ -f "${BOOTDIR}/${f}" ]; then
               KIMG="$f"
               cp -f "${BOOTDIR}/${f}" "anykernel/${f}"
@@ -188,11 +192,12 @@ jobs:
             exit 1
           fi
 
-          # Update your AnyKernel properties (works with your fixed properties() style)
-          sed -i "s|^kernel.string=.*|kernel.string=${KERNEL_VERSION}|" anykernel/anykernel.sh
-          sed -i "s|^device.name1=.*|device.name1=${{ inputs.device }}|" anykernel/anykernel.sh
+          # Stamp kernel.string (universal: naming only, no device-check keys)
+          KSTR="Custom Kernel ${{ inputs.device }} ${KERNEL_VERSION}"
+          KSTR_ESC="${KSTR//&/\\&}"
+          sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/anykernel.sh
 
-          ZIP_NAME="Kernel-${{ inputs.device }}-${{ github.run_number }}.zip"
+          ZIP_NAME="Kernel-${{ inputs.device }}-${{ github.run_id }}-${{ github.run_attempt }}.zip"
           (cd anykernel && zip -r9 "../${ZIP_NAME}" . -x "*.git*" )
 
           echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
@@ -202,7 +207,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-${{ inputs.device }}-${{ github.run_number }}
+          name: kernel-${{ inputs.device }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             Kernel-*.zip
             kernel/build.log
@@ -213,8 +218,8 @@ jobs:
         if: env.SUCCESS == '1'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: Kernel-${{ inputs.device }} (build ${{ github.run_number }})
+          tag_name: build-${{ github.run_id }}-${{ github.run_attempt }}
+          name: Kernel-${{ inputs.device }} (run ${{ github.run_id }}/${{ github.run_attempt }})
           files: |
             ${{ env.ZIP_NAME }}
             kernel/build.log
@@ -245,3 +250,7 @@ jobs:
             -F document=@kernel/error.log \
             -F caption="Kernel build FAILED | Device=${{ inputs.device }}" \
             "https://api.telegram.org/bot${TG_TOKEN}/sendDocument"
+
+      - name: Mark workflow failed if kernel build failed
+        if: env.SUCCESS == '0'
+        run: exit 1
