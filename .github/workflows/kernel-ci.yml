@@ -94,12 +94,8 @@ jobs:
           set -euo pipefail
           export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
 
-          # Only touch build-system files
           if grep -RIn --include='Makefile*' --include='*.mk' --include='*.make' -- '-polly-' kernel >/dev/null 2>&1; then
             echo "Found -polly-* flags in kernel tree. Checking toolchain compatibility..."
-
-            # If clang rejects polly flags (common), strip them to keep build working.
-            # (These are optimization flags; stripping prevents hard failure.)
             if ! clang -c -x c /dev/null -o /tmp/polly_test.o -polly-reschedule=1 >/dev/null 2>&1; then
               echo "Clang does not accept -polly-*. Stripping from Makefiles..."
               find kernel -type f \( -name 'Makefile' -o -name 'Makefile.*' -o -name '*.mk' -o -name '*.make' \) -print0 \
@@ -144,8 +140,22 @@ jobs:
           # Generate .config
           make O=out "${{ inputs.defconfig }}"
 
-          # Non-interactive config sync (fixes CI prompts / EOF)
-          yes "" | make O=out oldconfig
+          # Non-interactive config sync (fixes CI prompts / EOF) without failing on `yes` SIGPIPE
+          if make O=out olddefconfig; then
+            :
+          else
+            # Fallback for trees that don't behave with olddefconfig
+            # Temporarily disable pipefail so `yes` broken-pipe doesn't fail the step
+            set +e
+            set +o pipefail
+            yes "" 2>/dev/null | make O=out oldconfig
+            MAKE_RC="${PIPESTATUS[1]}"
+            set -o pipefail
+            set -e
+            if [ "$MAKE_RC" -ne 0 ]; then
+              exit "$MAKE_RC"
+            fi
+          fi
 
           START="$(date +%s)"
           if make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 2>&1 | tee build.log; then
