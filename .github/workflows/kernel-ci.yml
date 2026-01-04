@@ -35,10 +35,8 @@ jobs:
     env:
       ARCH: arm64
       SUBARCH: arm64
-
       TG_TOKEN: ${{ secrets.TG_TOKEN }}
       TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-
       CCACHE_DIR: ${{ github.workspace }}/.ccache
 
     steps:
@@ -102,10 +100,8 @@ jobs:
       - name: Build Kernel
         run: |
           set -euo pipefail
-
           export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
 
-          # ccache + clang
           ccache -M 5G || true
           ccache -z || true
 
@@ -120,7 +116,6 @@ jobs:
 
           cd kernel
           mkdir -p out
-
           make O=out "${{ inputs.defconfig }}"
 
           START="$(date +%s)"
@@ -138,7 +133,6 @@ jobs:
           printf "KERNEL_VERSION=%s\n" "${KVER:-unknown}" >> "$GITHUB_ENV"
           printf "CLANG_VERSION=%s\n" "${CLANG_VER:-unknown}" >> "$GITHUB_ENV"
 
-          echo "ccache stats:"
           ccache -s || true
 
       - name: Detect GKI
@@ -154,7 +148,6 @@ jobs:
         if: env.SUCCESS == '1'
         run: |
           set -euo pipefail
-
           test -f anykernel/anykernel.sh || { echo "Missing: anykernel/anykernel.sh"; exit 1; }
 
           if [ ! -f anykernel/tools/ak3-core.sh ]; then
@@ -174,7 +167,6 @@ jobs:
           BOOTDIR="kernel/out/arch/arm64/boot"
           test -d "$BOOTDIR" || { echo "Missing boot dir: $BOOTDIR"; exit 1; }
 
-          # Avoid shipping multiple images
           rm -f anykernel/Image* anykernel/zImage 2>/dev/null || true
 
           KIMG=""
@@ -192,10 +184,11 @@ jobs:
             exit 1
           fi
 
-          # Stamp kernel.string (universal: naming only, no device-check keys)
+          # Stamp info without breaking universal installer
           KSTR="Custom Kernel ${{ inputs.device }} ${KERNEL_VERSION}"
           KSTR_ESC="${KSTR//&/\\&}"
           sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/anykernel.sh
+          sed -i "s|^[[:space:]]*device.name1=.*|device.name1=${{ inputs.device }}|" anykernel/anykernel.sh
 
           ZIP_NAME="Kernel-${{ inputs.device }}-${{ github.run_id }}-${{ github.run_attempt }}.zip"
           (cd anykernel && zip -r9 "../${ZIP_NAME}" . -x "*.git*" )
