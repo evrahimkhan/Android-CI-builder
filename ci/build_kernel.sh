@@ -26,7 +26,6 @@ mkdir -p out
 
 run_oldconfig() {
   # Non-interactive oldconfig; ignore `yes` SIGPIPE by disabling pipefail.
-  # Exit code is from `make`, not `yes`.
   set +e
   set +o pipefail
   yes "" 2>/dev/null | make O=out oldconfig
@@ -108,18 +107,17 @@ if [ "$KSU_NEXT" = "true" ]; then
 
   # ------------------------------------------------------------
   # Compat patch #0: define TWA_RESUME globally for KernelSU sources
+  # Fixes multiple KernelSU files on older kernels
   # ------------------------------------------------------------
   if [ -d include ] && ! grep -Rqs '\bTWA_RESUME\b' include; then
-    if [ -f drivers/kernelsu/Makefile ]; then
-      if ! grep -q 'KSU_NEXT_CI_COMPAT_TWA_RESUME' drivers/kernelsu/Makefile; then
-        {
-          echo '# KSU_NEXT_CI_COMPAT_TWA_RESUME: older kernels lack TWA_RESUME; treat as "notify=1"'
-          echo 'ccflags-y += -DTWA_RESUME=1'
-          echo
-        } | cat - drivers/kernelsu/Makefile > drivers/kernelsu/Makefile.tmp
-        mv drivers/kernelsu/Makefile.tmp drivers/kernelsu/Makefile
-        echo "Applied KernelSU Makefile compat: ccflags-y += -DTWA_RESUME=1"
-      fi
+    if [ -f drivers/kernelsu/Makefile ] && ! grep -q 'KSU_NEXT_CI_COMPAT_TWA_RESUME' drivers/kernelsu/Makefile; then
+      {
+        echo '# KSU_NEXT_CI_COMPAT_TWA_RESUME: older kernels lack TWA_RESUME; treat as "notify=1"'
+        echo 'ccflags-y += -DTWA_RESUME=1'
+        echo
+      } | cat - drivers/kernelsu/Makefile > drivers/kernelsu/Makefile.tmp
+      mv drivers/kernelsu/Makefile.tmp drivers/kernelsu/Makefile
+      echo "Applied KernelSU Makefile compat: ccflags-y += -DTWA_RESUME=1"
     fi
   fi
 
@@ -160,17 +158,15 @@ print("Applied allowlist.c header compat patch.")
 PY
   fi
 
-  # ---- Compat patch #2: sucompat.c (linux/pgtable.h missing) ----
-  if [ -f drivers/kernelsu/sucompat.c ]; then
+  # ---- Compat patch #2: pgtable include fallback for ALL KernelSU sources ----
+  # Fixes: util.c, sucompat.c, and any other file including <linux/pgtable.h>
+  if [ -d drivers/kernelsu ] && [ -d include ] && ! grep -Rqs 'include/linux/pgtable.h' include; then
     python3 - <<'PY'
 import re
 from pathlib import Path
 
-p = Path("drivers/kernelsu/sucompat.c")
-s = p.read_text(errors="ignore")
-marker = "KSU_NEXT_CI_COMPAT_PGTABLE"
-if marker in s:
-    raise SystemExit(0)
+root = Path("drivers/kernelsu")
+files = list(root.glob("*.c")) + list(root.glob("*.h"))
 
 block = r'''/* KSU_NEXT_CI_COMPAT_PGTABLE: some kernels lack <linux/pgtable.h> */
 #if defined(__has_include)
@@ -188,21 +184,20 @@ block = r'''/* KSU_NEXT_CI_COMPAT_PGTABLE: some kernels lack <linux/pgtable.h> *
 #endif
 '''
 
-pat = r'^\s*#include\s*<linux/pgtable\.h>\s*$'
-s2, n = re.subn(pat, block, s, flags=re.M)
+pat = re.compile(r'^\s*#include\s*<linux/pgtable\.h>\s*$', re.M)
 
-if n == 0:
-    lines = s.splitlines(True)
-    last_inc = -1
-    for i, line in enumerate(lines[:250]):
-        if line.lstrip().startswith("#include"):
-            last_inc = i
-    insert_at = last_inc + 1 if last_inc != -1 else 0
-    lines.insert(insert_at, block + "\n")
-    s2 = "".join(lines)
+changed = 0
+for p in files:
+    s = p.read_text(errors="ignore")
+    if "KSU_NEXT_CI_COMPAT_PGTABLE" in s:
+        continue
+    if not pat.search(s):
+        continue
+    s2 = pat.sub(block, s, count=1)
+    p.write_text(s2)
+    changed += 1
 
-p.write_text(s2)
-print("Applied sucompat.c pgtable compat patch.")
+print(f"Applied pgtable compat patch to {changed} file(s).")
 PY
   fi
 
@@ -259,7 +254,6 @@ PY
   fi
 
   # ---- Compat patch #4: seccomp_cache.c (SECCOMP_ARCH_NATIVE_NR missing) ----
-  # Older kernels may not define SECCOMP_ARCH_NATIVE_NR; KernelSU uses it for bitmap sizing.
   if [ -f drivers/kernelsu/seccomp_cache.c ] && [ -d include ]; then
     if ! grep -Rqs '\bSECCOMP_ARCH_NATIVE_NR\b' include; then
       python3 - <<'PY'
