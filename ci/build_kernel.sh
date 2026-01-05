@@ -37,7 +37,7 @@ run_oldconfig() {
 }
 
 fail_gracefully() {
-  # Keep workflow functionality: write error.log, keep SUCCESS=0, exit 0 so later steps run
+  # Keep pipeline behavior: write error.log, keep SUCCESS=0, exit 0 so later steps run
   local msg="${1:-Unknown error}"
   printf '%s\n' "$msg" > error.log
   exit 0
@@ -106,11 +106,44 @@ if [ "$KSU_NEXT" = "true" ]; then
     fail_gracefully "ERROR: oldconfig after enabling KernelSU failed"
   fi
 
-  # ---- Compat patch #1: allowlist.c (TWA_RESUME + put_task_struct header) ----
+  # ------------------------------------------------------------
+  # Compat patch #0: define TWA_RESUME globally for KernelSU sources
+  # Fixes: kernel_umount.c / allowlist.c / others failing on older kernels.
+  # We only add this if the kernel headers don't contain TWA_RESUME.
+  # ------------------------------------------------------------
+  if [ -d include ] && ! grep -Rqs '\bTWA_RESUME\b' include; then
+    if [ -f drivers/kernelsu/Makefile ]; then
+      if ! grep -q 'KSU_NEXT_CI_COMPAT_TWA_RESUME' drivers/kernelsu/Makefile; then
+        {
+          echo '# KSU_NEXT_CI_COMPAT_TWA_RESUME: older kernels lack TWA_RESUME; treat as "notify=1"'
+          echo 'ccflags-y += -DTWA_RESUME=1'
+          echo
+        } | cat - drivers/kernelsu/Makefile > drivers/kernelsu/Makefile.tmp
+        mv drivers/kernelsu/Makefile.tmp drivers/kernelsu/Makefile
+        echo "Applied KernelSU Makefile compat: ccflags-y += -DTWA_RESUME=1"
+      fi
+    else
+      # Fallback: inject define into each file that uses TWA_RESUME
+      for f in drivers/kernelsu/*.c; do
+        [ -f "$f" ] || continue
+        if grep -q '\bTWA_RESUME\b' "$f" && ! grep -q 'KSU_NEXT_CI_COMPAT_TWA_RESUME' "$f"; then
+          perl -0777 -i -pe '
+            BEGIN {
+              $p = "/* KSU_NEXT_CI_COMPAT_TWA_RESUME: older kernels lack TWA_RESUME */\n".
+                   "#ifndef TWA_RESUME\n#define TWA_RESUME 1\n#endif\n\n";
+            }
+            $_ = $p . $_;
+          ' "$f"
+        fi
+      done
+      echo "Applied KernelSU source compat: injected TWA_RESUME define into users."
+    fi
+  fi
+
+  # ---- Compat patch #1: allowlist.c (put_task_struct header; keep existing behavior) ----
   if [ -f drivers/kernelsu/allowlist.c ]; then
     python3 - <<'PY'
 from pathlib import Path
-
 p = Path("drivers/kernelsu/allowlist.c")
 s = p.read_text(errors="ignore")
 marker = "KSU_NEXT_CI_COMPAT_ALLOWLIST"
@@ -119,13 +152,8 @@ if marker in s:
 
 compat = r'''
 /* KSU_NEXT_CI_COMPAT_ALLOWLIST: CI compatibility for older kernels.
- * - Older kernels may not define TWA_RESUME.
- * - Some trees need <linux/sched/task.h> for put_task_struct().
+ * Some trees need <linux/sched/task.h> for put_task_struct().
  */
-#ifndef TWA_RESUME
-#define TWA_RESUME 1
-#endif
-
 #if defined(__has_include)
 # if __has_include(<linux/sched/task.h>)
 #  include <linux/sched/task.h>
@@ -145,7 +173,7 @@ for i, line in enumerate(lines[:250]):
 insert_at = last_inc + 1 if last_inc != -1 else 0
 lines.insert(insert_at, compat + "\n")
 p.write_text("".join(lines))
-print("Applied allowlist.c compat patch.")
+print("Applied allowlist.c header compat patch.")
 PY
   fi
 
@@ -181,7 +209,6 @@ pat = r'^\s*#include\s*<linux/pgtable\.h>\s*$'
 s2, n = re.subn(pat, block, s, flags=re.M)
 
 if n == 0:
-    # Insert after include block
     lines = s.splitlines(True)
     last_inc = -1
     for i, line in enumerate(lines[:250]):
@@ -197,7 +224,6 @@ PY
   fi
 
   # ---- Compat patch #3: pkg_observer.c (fsnotify API mismatch) ----
-  # Your kernel has fsnotify_ops.handle_event, not handle_inode_event.
   if [ -f drivers/kernelsu/pkg_observer.c ] && [ -f include/linux/fsnotify_backend.h ]; then
     if grep -q 'handle_event' include/linux/fsnotify_backend.h && ! grep -q 'handle_inode_event' include/linux/fsnotify_backend.h; then
       if grep -q '\.handle_inode_event' drivers/kernelsu/pkg_observer.c; then
@@ -210,7 +236,6 @@ s = p.read_text(errors="ignore")
 
 marker = "KSU_NEXT_CI_COMPAT_FSNOTIFY"
 if marker not in s:
-    # Insert wrapper after include block
     wrapper = r'''
 /* KSU_NEXT_CI_COMPAT_FSNOTIFY: adapt KernelSU fsnotify code for kernels
  * where fsnotify_ops uses .handle_event (not .handle_inode_event).
@@ -240,7 +265,6 @@ static int ksu_handle_event(struct fsnotify_group *group,
     lines.insert(insert_at, wrapper + "\n")
     s = "".join(lines)
 
-# Replace designated initializer
 s = re.sub(r'\.handle_inode_event\s*=\s*ksu_handle_inode_event',
            '.handle_event = ksu_handle_event', s)
 
