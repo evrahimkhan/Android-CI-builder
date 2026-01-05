@@ -108,8 +108,6 @@ if [ "$KSU_NEXT" = "true" ]; then
 
   # ------------------------------------------------------------
   # Compat patch #0: define TWA_RESUME globally for KernelSU sources
-  # Fixes: kernel_umount.c / allowlist.c / others failing on older kernels.
-  # We only add this if the kernel headers don't contain TWA_RESUME.
   # ------------------------------------------------------------
   if [ -d include ] && ! grep -Rqs '\bTWA_RESUME\b' include; then
     if [ -f drivers/kernelsu/Makefile ]; then
@@ -122,25 +120,10 @@ if [ "$KSU_NEXT" = "true" ]; then
         mv drivers/kernelsu/Makefile.tmp drivers/kernelsu/Makefile
         echo "Applied KernelSU Makefile compat: ccflags-y += -DTWA_RESUME=1"
       fi
-    else
-      # Fallback: inject define into each file that uses TWA_RESUME
-      for f in drivers/kernelsu/*.c; do
-        [ -f "$f" ] || continue
-        if grep -q '\bTWA_RESUME\b' "$f" && ! grep -q 'KSU_NEXT_CI_COMPAT_TWA_RESUME' "$f"; then
-          perl -0777 -i -pe '
-            BEGIN {
-              $p = "/* KSU_NEXT_CI_COMPAT_TWA_RESUME: older kernels lack TWA_RESUME */\n".
-                   "#ifndef TWA_RESUME\n#define TWA_RESUME 1\n#endif\n\n";
-            }
-            $_ = $p . $_;
-          ' "$f"
-        fi
-      done
-      echo "Applied KernelSU source compat: injected TWA_RESUME define into users."
     fi
   fi
 
-  # ---- Compat patch #1: allowlist.c (put_task_struct header; keep existing behavior) ----
+  # ---- Compat patch #1: allowlist.c header compat (put_task_struct) ----
   if [ -f drivers/kernelsu/allowlist.c ]; then
     python3 - <<'PY'
 from pathlib import Path
@@ -272,6 +255,41 @@ p.write_text(s)
 print("Applied pkg_observer.c fsnotify compat patch.")
 PY
       fi
+    fi
+  fi
+
+  # ---- Compat patch #4: seccomp_cache.c (SECCOMP_ARCH_NATIVE_NR missing) ----
+  # Older kernels may not define SECCOMP_ARCH_NATIVE_NR; KernelSU uses it for bitmap sizing.
+  if [ -f drivers/kernelsu/seccomp_cache.c ] && [ -d include ]; then
+    if ! grep -Rqs '\bSECCOMP_ARCH_NATIVE_NR\b' include; then
+      python3 - <<'PY'
+from pathlib import Path
+p = Path("drivers/kernelsu/seccomp_cache.c")
+s = p.read_text(errors="ignore")
+marker = "KSU_NEXT_CI_COMPAT_SECCOMP_ARCH_NATIVE_NR"
+if marker in s:
+    raise SystemExit(0)
+
+compat = r'''
+/* KSU_NEXT_CI_COMPAT_SECCOMP_ARCH_NATIVE_NR:
+ * Some older/vendor kernels do not define SECCOMP_ARCH_NATIVE_NR.
+ * Treat native-arch count as 1 in that case.
+ */
+#ifndef SECCOMP_ARCH_NATIVE_NR
+#define SECCOMP_ARCH_NATIVE_NR 1
+#endif
+'''
+
+lines = s.splitlines(True)
+last_inc = -1
+for i, line in enumerate(lines[:200]):
+    if line.lstrip().startswith("#include"):
+        last_inc = i
+insert_at = last_inc + 1 if last_inc != -1 else 0
+lines.insert(insert_at, compat + "\n")
+p.write_text("".join(lines))
+print("Applied seccomp_cache.c SECCOMP_ARCH_NATIVE_NR compat patch.")
+PY
     fi
   fi
 
