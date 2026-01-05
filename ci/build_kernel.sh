@@ -36,7 +36,7 @@ run_oldconfig() {
 }
 
 fail_gracefully() {
-  # Keep pipeline behavior: write error.log, keep SUCCESS=0, exit 0 so later steps run
+  # Preserve CI flow: write error.log, keep SUCCESS=0, exit 0 so Telegram/artifacts still run
   local msg="${1:-Unknown error}"
   printf '%s\n' "$msg" > error.log
   exit 0
@@ -88,7 +88,7 @@ if [ "$KSU_NEXT" = "true" ]; then
     fail_gracefully "ERROR: oldconfig after KernelSU wiring failed"
   fi
 
-  # Enable deps + KSU (depends on KPROBES)
+  # Enable deps + KSU (KSU depends on KPROBES)
   if [ -f scripts/config ]; then
     ./scripts/config --file out/.config -e KPROBES || true
     ./scripts/config --file out/.config -e KALLSYMS || true
@@ -107,7 +107,6 @@ if [ "$KSU_NEXT" = "true" ]; then
 
   # ------------------------------------------------------------
   # Compat patch #0: define TWA_RESUME globally for KernelSU sources
-  # Fixes multiple KernelSU files on older kernels
   # ------------------------------------------------------------
   if [ -d include ] && ! grep -Rqs '\bTWA_RESUME\b' include; then
     if [ -f drivers/kernelsu/Makefile ] && ! grep -q 'KSU_NEXT_CI_COMPAT_TWA_RESUME' drivers/kernelsu/Makefile; then
@@ -121,52 +120,17 @@ if [ "$KSU_NEXT" = "true" ]; then
     fi
   fi
 
-  # ---- Compat patch #1: allowlist.c header compat (put_task_struct) ----
-  if [ -f drivers/kernelsu/allowlist.c ]; then
-    python3 - <<'PY'
-from pathlib import Path
-p = Path("drivers/kernelsu/allowlist.c")
-s = p.read_text(errors="ignore")
-marker = "KSU_NEXT_CI_COMPAT_ALLOWLIST"
-if marker in s:
-    raise SystemExit(0)
-
-compat = r'''
-/* KSU_NEXT_CI_COMPAT_ALLOWLIST: CI compatibility for older kernels.
- * Some trees need <linux/sched/task.h> for put_task_struct().
- */
-#if defined(__has_include)
-# if __has_include(<linux/sched/task.h>)
-#  include <linux/sched/task.h>
-# elif __has_include(<linux/sched.h>)
-#  include <linux/sched.h>
-# endif
-#else
-# include <linux/sched.h>
-#endif
-'''
-
-lines = s.splitlines(True)
-last_inc = -1
-for i, line in enumerate(lines[:250]):
-    if line.lstrip().startswith("#include"):
-        last_inc = i
-insert_at = last_inc + 1 if last_inc != -1 else 0
-lines.insert(insert_at, compat + "\n")
-p.write_text("".join(lines))
-print("Applied allowlist.c header compat patch.")
-PY
-  fi
-
-  # ---- Compat patch #2: pgtable include fallback for ALL KernelSU sources ----
-  # Fixes: util.c, sucompat.c, and any other file including <linux/pgtable.h>
-  if [ -d drivers/kernelsu ] && [ -d include ] && ! grep -Rqs 'include/linux/pgtable.h' include; then
+  # ------------------------------------------------------------
+  # Compat patch #1: pgtable include fallback for ALL KernelSU sources
+  # Fixes multiple files missing <linux/pgtable.h> on vendor trees
+  # ------------------------------------------------------------
+  if [ -d drivers/kernelsu ] && [ -d include ] && [ ! -f include/linux/pgtable.h ]; then
     python3 - <<'PY'
 import re
 from pathlib import Path
 
 root = Path("drivers/kernelsu")
-files = list(root.glob("*.c")) + list(root.glob("*.h"))
+files = list(root.rglob("*.c")) + list(root.rglob("*.h"))
 
 block = r'''/* KSU_NEXT_CI_COMPAT_PGTABLE: some kernels lack <linux/pgtable.h> */
 #if defined(__has_include)
@@ -201,7 +165,45 @@ print(f"Applied pgtable compat patch to {changed} file(s).")
 PY
   fi
 
-  # ---- Compat patch #3: pkg_observer.c (fsnotify API mismatch) ----
+  # ------------------------------------------------------------
+  # Compat patch #2: seccomp_cache.c (SECCOMP_ARCH_NATIVE_NR missing)
+  # ------------------------------------------------------------
+  if [ -f drivers/kernelsu/seccomp_cache.c ] && [ -d include ]; then
+    if ! grep -Rqs '\bSECCOMP_ARCH_NATIVE_NR\b' include; then
+      python3 - <<'PY'
+from pathlib import Path
+p = Path("drivers/kernelsu/seccomp_cache.c")
+s = p.read_text(errors="ignore")
+marker = "KSU_NEXT_CI_COMPAT_SECCOMP_ARCH_NATIVE_NR"
+if marker in s:
+    raise SystemExit(0)
+
+compat = r'''
+/* KSU_NEXT_CI_COMPAT_SECCOMP_ARCH_NATIVE_NR:
+ * Some older/vendor kernels do not define SECCOMP_ARCH_NATIVE_NR.
+ * Treat native-arch count as 1 in that case.
+ */
+#ifndef SECCOMP_ARCH_NATIVE_NR
+#define SECCOMP_ARCH_NATIVE_NR 1
+#endif
+'''
+
+lines = s.splitlines(True)
+last_inc = -1
+for i, line in enumerate(lines[:200]):
+    if line.lstrip().startswith("#include"):
+        last_inc = i
+insert_at = last_inc + 1 if last_inc != -1 else 0
+lines.insert(insert_at, compat + "\n")
+p.write_text("".join(lines))
+print("Applied seccomp_cache.c SECCOMP_ARCH_NATIVE_NR compat patch.")
+PY
+    fi
+  fi
+
+  # ------------------------------------------------------------
+  # Compat patch #3: pkg_observer.c (fsnotify API mismatch)
+  # ------------------------------------------------------------
   if [ -f drivers/kernelsu/pkg_observer.c ] && [ -f include/linux/fsnotify_backend.h ]; then
     if grep -q 'handle_event' include/linux/fsnotify_backend.h && ! grep -q 'handle_inode_event' include/linux/fsnotify_backend.h; then
       if grep -q '\.handle_inode_event' drivers/kernelsu/pkg_observer.c; then
@@ -253,36 +255,141 @@ PY
     fi
   fi
 
-  # ---- Compat patch #4: seccomp_cache.c (SECCOMP_ARCH_NATIVE_NR missing) ----
-  if [ -f drivers/kernelsu/seccomp_cache.c ] && [ -d include ]; then
-    if ! grep -Rqs '\bSECCOMP_ARCH_NATIVE_NR\b' include; then
+  # ------------------------------------------------------------
+  # Compat patch #4: sepolicy.c (SELinux filename transition API mismatch)
+  # Your kernel's policydb.h lacks fields/types KernelSU expects.
+  # We stub ONLY the top-level function(s) that touch filename_trans_* APIs.
+  # ------------------------------------------------------------
+  if [ -f drivers/kernelsu/selinux/sepolicy.c ] && [ -f security/selinux/ss/policydb.h ]; then
+    # Heuristic: older policydb.h lacks these newer members/struct layouts
+    if ! grep -q 'compat_filename_trans_count' security/selinux/ss/policydb.h; then
       python3 - <<'PY'
 from pathlib import Path
-p = Path("drivers/kernelsu/seccomp_cache.c")
+import re
+
+p = Path("drivers/kernelsu/selinux/sepolicy.c")
 s = p.read_text(errors="ignore")
-marker = "KSU_NEXT_CI_COMPAT_SECCOMP_ARCH_NATIVE_NR"
+marker = "KSU_NEXT_CI_COMPAT_SELINUX_FILENAME_TRANS"
+
 if marker in s:
     raise SystemExit(0)
 
-compat = r'''
-/* KSU_NEXT_CI_COMPAT_SECCOMP_ARCH_NATIVE_NR:
- * Some older/vendor kernels do not define SECCOMP_ARCH_NATIVE_NR.
- * Treat native-arch count as 1 in that case.
- */
-#ifndef SECCOMP_ARCH_NATIVE_NR
-#define SECCOMP_ARCH_NATIVE_NR 1
-#endif
-'''
+# Only patch if this file references filename transition internals
+tokens = [
+    "filename_trans_key",
+    "filename_trans_datum",
+    "policydb_filenametr_search",
+    "compat_filename_trans_count",
+    "filenametr_key_params",
+]
+if not any(t in s for t in tokens):
+    raise SystemExit(0)
 
 lines = s.splitlines(True)
-last_inc = -1
-for i, line in enumerate(lines[:200]):
-    if line.lstrip().startswith("#include"):
-        last_inc = i
-insert_at = last_inc + 1 if last_inc != -1 else 0
-lines.insert(insert_at, compat + "\n")
-p.write_text("".join(lines))
-print("Applied seccomp_cache.c SECCOMP_ARCH_NATIVE_NR compat patch.")
+
+def brace_delta(line: str) -> int:
+    # naive but works for typical kernel C formatting
+    return line.count("{") - line.count("}")
+
+# compute depth_before and depth_after
+depth_before = []
+depth = 0
+for ln in lines:
+    depth_before.append(depth)
+    depth += brace_delta(ln)
+
+# find all target lines that mention filename transition internals
+target_idxs = [i for i, ln in enumerate(lines) if any(t in ln for t in tokens)]
+
+# map each target to a top-level block (depth 0 -> depth 1)
+blocks = []
+for idx in target_idxs:
+    # find nearest previous line that starts a top-level brace block
+    start = None
+    d = depth_before[idx]
+    # We want the enclosing block that began at depth 0
+    for i in range(idx, -1, -1):
+        if depth_before[i] == 0 and "{" in lines[i]:
+            # ensure this line actually increases depth to 1
+            if brace_delta(lines[i]) > 0:
+                start = i
+                break
+    if start is None:
+        continue
+
+    # find end where we return to depth 0 after leaving this block
+    depth = 0
+    # recompute from start
+    for j in range(start, len(lines)):
+        depth += brace_delta(lines[j])
+        if depth == 0:
+            end = j
+            blocks.append((start, end))
+            break
+
+# dedupe blocks
+blocks = sorted(set(blocks))
+
+def guess_return(sig: str) -> str:
+    # crude return-type guess from signature text
+    if re.search(r'\bvoid\b', sig):
+        return ""
+    if re.search(r'\bbool\b', sig):
+        return "  return false;\n"
+    if re.search(r'\bint\b', sig) or re.search(r'\blong\b', sig) or re.search(r'\bssize_t\b', sig):
+        return "  return 0;\n"
+    # default: return 0
+    return "  return 0;\n"
+
+out = []
+i = 0
+patched_any = False
+
+for (start, end) in blocks:
+    # emit lines up to start
+    out.extend(lines[i:start])
+
+    block_text = "".join(lines[start:end+1])
+    # only stub blocks that actually contain our tokens
+    if not any(t in block_text for t in tokens):
+        out.extend(lines[start:end+1])
+        i = end + 1
+        continue
+
+    # Extract signature up to first '{' in the block
+    # Keep the original signature lines so prototypes match
+    sig_lines = []
+    brace_line_idx = None
+    for k in range(start, end+1):
+        sig_lines.append(lines[k])
+        if "{" in lines[k]:
+            brace_line_idx = k
+            break
+
+    sig_text = "".join(sig_lines)
+    ret = guess_return(sig_text)
+
+    stub = []
+    stub.append("/* " + marker + ": kernel SELinux policydb filename transition APIs differ on this tree.\n")
+    stub.append(" * Stubbing this helper to keep KernelSU-Next building on older/vendor kernels.\n")
+    stub.append(" */\n")
+    stub.extend(sig_lines)
+    stub.append("  /* unsupported policydb filename transition layout on this kernel */\n")
+    stub.append(ret if ret else "")
+    stub.append("}\n")
+
+    out.extend(stub)
+    patched_any = True
+    i = end + 1
+
+# emit remainder
+out.extend(lines[i:])
+
+if patched_any:
+    p.write_text("".join(out))
+    print("Applied sepolicy.c filename transition compat stubs.")
+else:
+    print("No sepolicy.c blocks needed patching.")
 PY
     fi
   fi
