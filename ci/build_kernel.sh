@@ -46,7 +46,6 @@ fail_gracefully() {
 # Base config
 # ---------------------------
 make O=out "${DEFCONFIG}"
-
 if ! run_oldconfig; then
   fail_gracefully "ERROR: oldconfig failed"
 fi
@@ -88,7 +87,7 @@ if [ "$KSU_NEXT" = "true" ]; then
     fail_gracefully "ERROR: oldconfig after KernelSU wiring failed"
   fi
 
-  # Enable deps + KSU (KSU depends on KPROBES)
+  # Enable deps + KSU (depends on KPROBES)
   if [ -f scripts/config ]; then
     ./scripts/config --file out/.config -e KPROBES || true
     ./scripts/config --file out/.config -e KALLSYMS || true
@@ -106,7 +105,7 @@ if [ "$KSU_NEXT" = "true" ]; then
   fi
 
   # ------------------------------------------------------------
-  # Compat patch #0: define TWA_RESUME globally for KernelSU sources
+  # Compat patch: define TWA_RESUME globally for KernelSU sources
   # ------------------------------------------------------------
   if [ -d include ] && ! grep -Rqs '\bTWA_RESUME\b' include; then
     if [ -f drivers/kernelsu/Makefile ] && ! grep -q 'KSU_NEXT_CI_COMPAT_TWA_RESUME' drivers/kernelsu/Makefile; then
@@ -121,7 +120,7 @@ if [ "$KSU_NEXT" = "true" ]; then
   fi
 
   # ------------------------------------------------------------
-  # Compat patch #1: pgtable include fallback for ALL KernelSU sources
+  # Compat patch: pgtable include fallback for ALL KernelSU sources
   # ------------------------------------------------------------
   if [ -d drivers/kernelsu ] && [ -d include ] && [ ! -f include/linux/pgtable.h ]; then
     python3 - <<'PY'
@@ -148,7 +147,6 @@ block = r'''/* KSU_NEXT_CI_COMPAT_PGTABLE: some kernels lack <linux/pgtable.h> *
 '''
 
 pat = re.compile(r'^\s*#include\s*<linux/pgtable\.h>\s*$', re.M)
-
 changed = 0
 for p in files:
     s = p.read_text(errors="ignore")
@@ -156,8 +154,7 @@ for p in files:
         continue
     if not pat.search(s):
         continue
-    s2 = pat.sub(block, s, count=1)
-    p.write_text(s2)
+    p.write_text(pat.sub(block, s, count=1))
     changed += 1
 
 print(f"Applied pgtable compat patch to {changed} file(s).")
@@ -165,7 +162,7 @@ PY
   fi
 
   # ------------------------------------------------------------
-  # Compat patch #2: seccomp_cache.c (SECCOMP_ARCH_NATIVE_NR missing)
+  # Compat patch: SECCOMP_ARCH_NATIVE_NR missing
   # ------------------------------------------------------------
   if [ -f drivers/kernelsu/seccomp_cache.c ] && [ -d include ]; then
     if ! grep -Rqs '\bSECCOMP_ARCH_NATIVE_NR\b' include; then
@@ -188,12 +185,8 @@ compat = r'''
 '''
 
 lines = s.splitlines(True)
-last_inc = -1
-for i, line in enumerate(lines[:200]):
-    if line.lstrip().startswith("#include"):
-        last_inc = i
-insert_at = last_inc + 1 if last_inc != -1 else 0
-lines.insert(insert_at, compat + "\n")
+last_inc = max([i for i,l in enumerate(lines[:200]) if l.lstrip().startswith("#include")], default=-1)
+lines.insert(last_inc + 1 if last_inc != -1 else 0, compat + "\n")
 p.write_text("".join(lines))
 print("Applied seccomp_cache.c SECCOMP_ARCH_NATIVE_NR compat patch.")
 PY
@@ -201,7 +194,7 @@ PY
   fi
 
   # ------------------------------------------------------------
-  # Compat patch #3: pkg_observer.c (fsnotify API mismatch)
+  # Compat patch: pkg_observer.c fsnotify API mismatch
   # ------------------------------------------------------------
   if [ -f drivers/kernelsu/pkg_observer.c ] && [ -f include/linux/fsnotify_backend.h ]; then
     if grep -q 'handle_event' include/linux/fsnotify_backend.h && ! grep -q 'handle_inode_event' include/linux/fsnotify_backend.h; then
@@ -212,8 +205,8 @@ import re
 
 p = Path("drivers/kernelsu/pkg_observer.c")
 s = p.read_text(errors="ignore")
-
 marker = "KSU_NEXT_CI_COMPAT_FSNOTIFY"
+
 if marker not in s:
     wrapper = r'''
 /* KSU_NEXT_CI_COMPAT_FSNOTIFY: adapt KernelSU fsnotify code for kernels
@@ -236,12 +229,8 @@ static int ksu_handle_event(struct fsnotify_group *group,
 }
 '''
     lines = s.splitlines(True)
-    last_inc = -1
-    for i, line in enumerate(lines[:250]):
-        if line.lstrip().startswith("#include"):
-            last_inc = i
-    insert_at = last_inc + 1 if last_inc != -1 else 0
-    lines.insert(insert_at, wrapper + "\n")
+    last_inc = max([i for i,l in enumerate(lines[:250]) if l.lstrip().startswith("#include")], default=-1)
+    lines.insert(last_inc + 1 if last_inc != -1 else 0, wrapper + "\n")
     s = "".join(lines)
 
 s = re.sub(r'\.handle_inode_event\s*=\s*ksu_handle_inode_event',
@@ -255,9 +244,9 @@ PY
   fi
 
   # ------------------------------------------------------------
-  # Compat patch #4: allowlist.c put_task_struct prototype (avoid implicit declaration)
+  # Compat patch: allowlist.c put_task_struct prototype (avoid implicit declaration)
   # ------------------------------------------------------------
-  if [ -f drivers/kernelsu/allowlist.c ]; then
+  if [ -f drivers/kernelsu/allowlist.c ] && grep -q 'put_task_struct' drivers/kernelsu/allowlist.c; then
     python3 - <<'PY'
 from pathlib import Path
 p = Path("drivers/kernelsu/allowlist.c")
@@ -266,137 +255,223 @@ marker = "KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO"
 if marker in s:
     raise SystemExit(0)
 
-if "put_task_struct" not in s:
-    raise SystemExit(0)
-
 proto = r'''
 /* KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO: some vendor kernels don't expose
- * put_task_struct prototype via included headers. Provide a declaration to
- * avoid -Wimplicit-function-declaration (may be treated as error).
+ * put_task_struct prototype via included headers. Provide a declaration.
  */
 struct task_struct;
 extern void put_task_struct(struct task_struct *t);
 '''
 
 lines = s.splitlines(True)
-last_inc = -1
-for i, line in enumerate(lines[:200]):
-    if line.lstrip().startswith("#include"):
-        last_inc = i
-insert_at = last_inc + 1 if last_inc != -1 else 0
-lines.insert(insert_at, proto + "\n")
+last_inc = max([i for i,l in enumerate(lines[:200]) if l.lstrip().startswith("#include")], default=-1)
+lines.insert(last_inc + 1 if last_inc != -1 else 0, proto + "\n")
 p.write_text("".join(lines))
 print("Injected put_task_struct prototype into allowlist.c")
 PY
   fi
 
   # ------------------------------------------------------------
-  # Compat patch #5: KernelSU SELinux rules on older SELinux API
-  # Your kernel lacks selinux_state.policy, so KernelSU's rules.c doesn't compile.
-  # We generate stubs for all top-level functions in rules.c to preserve linking.
+  # Compat patch: sepolicy.c filename transition API mismatch
+  # This fixes your current errors around filename_trans_key/datum/stypes/next/etc.
+  # We stub ONLY the function(s) that reference those symbols.
   # ------------------------------------------------------------
-  if [ -f drivers/kernelsu/selinux/rules.c ]; then
-    # Only patch if kernel headers indicate selinux_state has no "policy" member
-    # (your error: "no member named 'policy' in struct selinux_state")
-    SEC_HDR=""
-    if [ -f security/selinux/include/security.h ]; then
-      SEC_HDR="security/selinux/include/security.h"
-    elif [ -f include/linux/selinux.h ]; then
-      SEC_HDR="include/linux/selinux.h"
-    fi
+  if [ -f drivers/kernelsu/selinux/sepolicy.c ] && [ -f security/selinux/ss/policydb.h ]; then
+    if ! grep -q 'compat_filename_trans_count' security/selinux/ss/policydb.h; then
+      python3 - <<'PY'
+import re
+from pathlib import Path
 
-    NEED_PATCH="0"
-    if [ -n "$SEC_HDR" ]; then
-      # If the header doesn't mention ".policy" at all, assume old API.
-      if ! grep -q '\bpolicy\b' "$SEC_HDR"; then
-        NEED_PATCH="1"
-      fi
-    else
-      NEED_PATCH="1"
-    fi
+p = Path("drivers/kernelsu/selinux/sepolicy.c")
+s = p.read_text(errors="ignore")
+marker = "KSU_NEXT_CI_COMPAT_SEPOLICY_FILENAMETR_STUB"
 
-    if [ "$NEED_PATCH" = "1" ] && ! grep -q 'KSU_NEXT_CI_COMPAT_SELINUX_RULES_STUBS' drivers/kernelsu/selinux/rules.c; then
+tokens = [
+  "filename_trans_key",
+  "filename_trans_datum",
+  "policydb_filenametr_search",
+  "filenametr_key_params",
+  "compat_filename_trans_count",
+  ".stypes",
+  "trans->next",
+]
+
+if marker in s:
+    raise SystemExit(0)
+
+# Only patch if file actually contains those tokens
+if not any(t in s for t in tokens):
+    raise SystemExit(0)
+
+lines = s.splitlines(True)
+
+def brace_delta(line: str) -> int:
+    return line.count("{") - line.count("}")
+
+# compute brace depth before each line
+depth_before = []
+d = 0
+for ln in lines:
+    depth_before.append(d)
+    d += brace_delta(ln)
+
+# find top-level function blocks by scanning for signatures that reach '{' at depth 0
+func_blocks = []
+i = 0
+while i < len(lines):
+    if depth_before[i] != 0:
+        i += 1
+        continue
+
+    # accumulate signature until '{'
+    if "(" not in lines[i] or lines[i].lstrip().startswith("#"):
+        i += 1
+        continue
+
+    sig_start = i
+    sig = [lines[i]]
+    j = i
+    while j < len(lines) and "{" not in lines[j]:
+        j += 1
+        if j < len(lines):
+            sig.append(lines[j])
+
+    if j >= len(lines) or "{" not in lines[j]:
+        i += 1
+        continue
+
+    sig_text = "".join(sig)
+    # skip initializers like "= {"
+    if "=" in sig_text and sig_text.find("=") < sig_text.find("{"):
+        i += 1
+        continue
+
+    # find end of this block by brace depth tracking from j
+    depth = 0
+    end = None
+    for k in range(j, len(lines)):
+        depth += brace_delta(lines[k])
+        if depth == 0:
+            end = k
+            break
+    if end is None:
+        break
+
+    block_text = "".join(lines[sig_start:end+1])
+    if any(t in block_text for t in tokens):
+        func_blocks.append((sig_start, end, sig_text))
+    i = end + 1
+
+def guess_return(sig_text: str) -> str:
+    # best-effort return type guess
+    if re.search(r'^\s*(static\s+)?(inline\s+)?void\b', sig_text):
+        return ""
+    if re.search(r'\bbool\b', sig_text):
+        return "  return false;\n"
+    if re.search(r'\*\s*[A-Za-z_]\w*\s*\(', sig_text):
+        return "  return NULL;\n"
+    return "  return 0;\n"
+
+if not func_blocks:
+    raise SystemExit(0)
+
+out = []
+cursor = 0
+for start, end, sig_text in func_blocks:
+    out.extend(lines[cursor:start])
+
+    # Keep the original signature exactly up to the first '{'
+    sig_lines = []
+    k = start
+    while k <= end:
+        sig_lines.append(lines[k])
+        if "{" in lines[k]:
+            break
+        k += 1
+
+    out.append(f"/* {marker}: kernel policydb filename transition API mismatch.\n")
+    out.append(" * Stubbing this helper to keep KernelSU building on this kernel.\n")
+    out.append(" */\n")
+    out.extend(sig_lines)
+    out.append("  /* unsupported filename transition layout on this kernel */\n")
+    out.append(guess_return(sig_text))
+    out.append("}\n")
+
+    cursor = end + 1
+
+out.extend(lines[cursor:])
+p.write_text("".join(out))
+print(f"Stubbed {len(func_blocks)} sepolicy.c function(s) using filename_trans_* APIs.")
+PY
+    fi
+  fi
+
+  # ------------------------------------------------------------
+  # Compat patch: rules.c old SELinux API (selinux_state.policy missing)
+  # If present, replace rules.c with stubs (keeps build/linking).
+  # ------------------------------------------------------------
+  if [ -f drivers/kernelsu/selinux/rules.c ] && grep -q 'selinux_state\.policy' drivers/kernelsu/selinux/rules.c; then
+    if ! grep -Rqs 'selinux_state\.policy' security/selinux 2>/dev/null; then
       python3 - <<'PY'
 import re
 from pathlib import Path
 
 src = Path("drivers/kernelsu/selinux/rules.c")
 s = src.read_text(errors="ignore")
-
 marker = "KSU_NEXT_CI_COMPAT_SELINUX_RULES_STUBS"
 if marker in s:
     raise SystemExit(0)
 
+# Find top-level functions and stub them
 lines = s.splitlines(True)
-
-# crude top-level function scanner
-funcs = []
 depth = 0
+funcs = []
 sig = []
-collecting = False
+collect = False
 
-def brace_delta(line: str) -> int:
-    return line.count("{") - line.count("}")
+def bd(l): return l.count("{") - l.count("}")
 
 for line in lines:
-    # track brace depth
     if depth == 0:
-        # start collecting possible signature
-        if not collecting:
-            # likely signature lines: not preprocessor, has '(' and not ';'
-            if ("(" in line) and (";" not in line) and (not line.lstrip().startswith("#")):
+        if not collect:
+            if "(" in line and ";" not in line and not line.lstrip().startswith("#"):
                 sig = [line]
-                collecting = True
+                collect = True
         else:
             sig.append(line)
 
-        if collecting and "{" in line:
+        if collect and "{" in line:
             sig_text = "".join(sig)
-            # accept if it looks like a function signature (name(...) {) and not an initializer (= {)
             if re.search(r'\b[A-Za-z_]\w*\s*\([^;]*\)\s*\{', sig_text) and ("=" not in sig_text):
-                # extract name (last identifier before '(')
-                m = re.search(r'([A-Za-z_]\w*)\s*\([^;]*\)\s*\{', sig_text)
-                name = m.group(1) if m else None
-                funcs.append((name, sig_text))
-            collecting = False
+                funcs.append(sig_text.strip())
+            collect = False
             sig = []
+    depth += bd(line)
+    if depth < 0: depth = 0
 
-    depth += brace_delta(line)
-    if depth < 0:
-        depth = 0
-
-def guess_return(sig_text: str) -> str:
-    # Determine return by checking tokens before function name
-    # If it contains 'void' as return type -> no return
+def ret_for(sig_text: str) -> str:
     if re.search(r'^\s*(static\s+)?(inline\s+)?void\b', sig_text):
         return ""
     if re.search(r'\bbool\b', sig_text):
         return "  return false;\n"
-    # pointer return
     if re.search(r'\*\s*[A-Za-z_]\w*\s*\(', sig_text):
         return "  return NULL;\n"
-    # default integer-ish
     return "  return 0;\n"
 
 out = []
-out.append("/* " + marker + ": KernelSU SELinux rules module is incompatible with this kernel's SELinux API.\n")
-out.append(" * This file is auto-stubbed in CI to keep KernelSU-Next building on older/vendor SELinux trees.\n")
+out.append(f"/* {marker}: KernelSU SELinux rules are incompatible with this kernel SELinux API.\n")
+out.append(" * Auto-stubbed in CI to keep KernelSU building.\n")
 out.append(" */\n\n")
-out.append("#include <linux/types.h>\n")
-out.append("#include <linux/errno.h>\n")
-out.append("#include <linux/kernel.h>\n\n")
+out.append("#include <linux/types.h>\n#include <linux/errno.h>\n\n")
 
 if not funcs:
-    # if we can't parse, provide an empty TU
     out.append("/* No functions detected to stub. */\n")
 else:
-    for name, sig_text in funcs:
-        # Keep signature up to the opening brace, then replace body with stub return.
-        # Normalize signature: ensure it ends with '{\n'
-        sig_text = re.sub(r'\{\s*$', '{\n', sig_text.strip(), flags=re.S) + "\n"
+    for sig_text in funcs:
+        sig_text = re.sub(r'\{\s*$', '{', sig_text) + "\n"
         out.append(sig_text)
         out.append("  (void)0;\n")
-        out.append(guess_return(sig_text))
+        out.append(ret_for(sig_text))
         out.append("}\n\n")
 
 src.write_text("".join(out))
@@ -433,6 +508,4 @@ printf "KERNEL_VERSION=%s\n" "${KVER:-unknown}" >> "$GITHUB_ENV"
 printf "CLANG_VERSION=%s\n" "${CLANG_VER:-unknown}" >> "$GITHUB_ENV"
 
 ccache -s || true
-
-# Never hard-fail here; the workflow uses env.SUCCESS to decide next steps.
 exit 0
