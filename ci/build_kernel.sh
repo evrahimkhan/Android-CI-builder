@@ -122,7 +122,6 @@ if [ "$KSU_NEXT" = "true" ]; then
 
   # ------------------------------------------------------------
   # Compat patch #1: pgtable include fallback for ALL KernelSU sources
-  # Fixes multiple files missing <linux/pgtable.h> on vendor trees
   # ------------------------------------------------------------
   if [ -d drivers/kernelsu ] && [ -d include ] && [ ! -f include/linux/pgtable.h ]; then
     python3 - <<'PY'
@@ -256,140 +255,152 @@ PY
   fi
 
   # ------------------------------------------------------------
-  # Compat patch #4: sepolicy.c (SELinux filename transition API mismatch)
-  # Your kernel's policydb.h lacks fields/types KernelSU expects.
-  # We stub ONLY the top-level function(s) that touch filename_trans_* APIs.
+  # Compat patch #4: allowlist.c put_task_struct prototype (avoid implicit declaration)
   # ------------------------------------------------------------
-  if [ -f drivers/kernelsu/selinux/sepolicy.c ] && [ -f security/selinux/ss/policydb.h ]; then
-    # Heuristic: older policydb.h lacks these newer members/struct layouts
-    if ! grep -q 'compat_filename_trans_count' security/selinux/ss/policydb.h; then
-      python3 - <<'PY'
+  if [ -f drivers/kernelsu/allowlist.c ]; then
+    python3 - <<'PY'
 from pathlib import Path
-import re
-
-p = Path("drivers/kernelsu/selinux/sepolicy.c")
+p = Path("drivers/kernelsu/allowlist.c")
 s = p.read_text(errors="ignore")
-marker = "KSU_NEXT_CI_COMPAT_SELINUX_FILENAME_TRANS"
-
+marker = "KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO"
 if marker in s:
     raise SystemExit(0)
 
-# Only patch if this file references filename transition internals
-tokens = [
-    "filename_trans_key",
-    "filename_trans_datum",
-    "policydb_filenametr_search",
-    "compat_filename_trans_count",
-    "filenametr_key_params",
-]
-if not any(t in s for t in tokens):
+if "put_task_struct" not in s:
+    raise SystemExit(0)
+
+proto = r'''
+/* KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO: some vendor kernels don't expose
+ * put_task_struct prototype via included headers. Provide a declaration to
+ * avoid -Wimplicit-function-declaration (may be treated as error).
+ */
+struct task_struct;
+extern void put_task_struct(struct task_struct *t);
+'''
+
+lines = s.splitlines(True)
+last_inc = -1
+for i, line in enumerate(lines[:200]):
+    if line.lstrip().startswith("#include"):
+        last_inc = i
+insert_at = last_inc + 1 if last_inc != -1 else 0
+lines.insert(insert_at, proto + "\n")
+p.write_text("".join(lines))
+print("Injected put_task_struct prototype into allowlist.c")
+PY
+  fi
+
+  # ------------------------------------------------------------
+  # Compat patch #5: KernelSU SELinux rules on older SELinux API
+  # Your kernel lacks selinux_state.policy, so KernelSU's rules.c doesn't compile.
+  # We generate stubs for all top-level functions in rules.c to preserve linking.
+  # ------------------------------------------------------------
+  if [ -f drivers/kernelsu/selinux/rules.c ]; then
+    # Only patch if kernel headers indicate selinux_state has no "policy" member
+    # (your error: "no member named 'policy' in struct selinux_state")
+    SEC_HDR=""
+    if [ -f security/selinux/include/security.h ]; then
+      SEC_HDR="security/selinux/include/security.h"
+    elif [ -f include/linux/selinux.h ]; then
+      SEC_HDR="include/linux/selinux.h"
+    fi
+
+    NEED_PATCH="0"
+    if [ -n "$SEC_HDR" ]; then
+      # If the header doesn't mention ".policy" at all, assume old API.
+      if ! grep -q '\bpolicy\b' "$SEC_HDR"; then
+        NEED_PATCH="1"
+      fi
+    else
+      NEED_PATCH="1"
+    fi
+
+    if [ "$NEED_PATCH" = "1" ] && ! grep -q 'KSU_NEXT_CI_COMPAT_SELINUX_RULES_STUBS' drivers/kernelsu/selinux/rules.c; then
+      python3 - <<'PY'
+import re
+from pathlib import Path
+
+src = Path("drivers/kernelsu/selinux/rules.c")
+s = src.read_text(errors="ignore")
+
+marker = "KSU_NEXT_CI_COMPAT_SELINUX_RULES_STUBS"
+if marker in s:
     raise SystemExit(0)
 
 lines = s.splitlines(True)
 
+# crude top-level function scanner
+funcs = []
+depth = 0
+sig = []
+collecting = False
+
 def brace_delta(line: str) -> int:
-    # naive but works for typical kernel C formatting
     return line.count("{") - line.count("}")
 
-# compute depth_before and depth_after
-depth_before = []
-depth = 0
-for ln in lines:
-    depth_before.append(depth)
-    depth += brace_delta(ln)
+for line in lines:
+    # track brace depth
+    if depth == 0:
+        # start collecting possible signature
+        if not collecting:
+            # likely signature lines: not preprocessor, has '(' and not ';'
+            if ("(" in line) and (";" not in line) and (not line.lstrip().startswith("#")):
+                sig = [line]
+                collecting = True
+        else:
+            sig.append(line)
 
-# find all target lines that mention filename transition internals
-target_idxs = [i for i, ln in enumerate(lines) if any(t in ln for t in tokens)]
+        if collecting and "{" in line:
+            sig_text = "".join(sig)
+            # accept if it looks like a function signature (name(...) {) and not an initializer (= {)
+            if re.search(r'\b[A-Za-z_]\w*\s*\([^;]*\)\s*\{', sig_text) and ("=" not in sig_text):
+                # extract name (last identifier before '(')
+                m = re.search(r'([A-Za-z_]\w*)\s*\([^;]*\)\s*\{', sig_text)
+                name = m.group(1) if m else None
+                funcs.append((name, sig_text))
+            collecting = False
+            sig = []
 
-# map each target to a top-level block (depth 0 -> depth 1)
-blocks = []
-for idx in target_idxs:
-    # find nearest previous line that starts a top-level brace block
-    start = None
-    d = depth_before[idx]
-    # We want the enclosing block that began at depth 0
-    for i in range(idx, -1, -1):
-        if depth_before[i] == 0 and "{" in lines[i]:
-            # ensure this line actually increases depth to 1
-            if brace_delta(lines[i]) > 0:
-                start = i
-                break
-    if start is None:
-        continue
+    depth += brace_delta(line)
+    if depth < 0:
+        depth = 0
 
-    # find end where we return to depth 0 after leaving this block
-    depth = 0
-    # recompute from start
-    for j in range(start, len(lines)):
-        depth += brace_delta(lines[j])
-        if depth == 0:
-            end = j
-            blocks.append((start, end))
-            break
-
-# dedupe blocks
-blocks = sorted(set(blocks))
-
-def guess_return(sig: str) -> str:
-    # crude return-type guess from signature text
-    if re.search(r'\bvoid\b', sig):
+def guess_return(sig_text: str) -> str:
+    # Determine return by checking tokens before function name
+    # If it contains 'void' as return type -> no return
+    if re.search(r'^\s*(static\s+)?(inline\s+)?void\b', sig_text):
         return ""
-    if re.search(r'\bbool\b', sig):
+    if re.search(r'\bbool\b', sig_text):
         return "  return false;\n"
-    if re.search(r'\bint\b', sig) or re.search(r'\blong\b', sig) or re.search(r'\bssize_t\b', sig):
-        return "  return 0;\n"
-    # default: return 0
+    # pointer return
+    if re.search(r'\*\s*[A-Za-z_]\w*\s*\(', sig_text):
+        return "  return NULL;\n"
+    # default integer-ish
     return "  return 0;\n"
 
 out = []
-i = 0
-patched_any = False
+out.append("/* " + marker + ": KernelSU SELinux rules module is incompatible with this kernel's SELinux API.\n")
+out.append(" * This file is auto-stubbed in CI to keep KernelSU-Next building on older/vendor SELinux trees.\n")
+out.append(" */\n\n")
+out.append("#include <linux/types.h>\n")
+out.append("#include <linux/errno.h>\n")
+out.append("#include <linux/kernel.h>\n\n")
 
-for (start, end) in blocks:
-    # emit lines up to start
-    out.extend(lines[i:start])
-
-    block_text = "".join(lines[start:end+1])
-    # only stub blocks that actually contain our tokens
-    if not any(t in block_text for t in tokens):
-        out.extend(lines[start:end+1])
-        i = end + 1
-        continue
-
-    # Extract signature up to first '{' in the block
-    # Keep the original signature lines so prototypes match
-    sig_lines = []
-    brace_line_idx = None
-    for k in range(start, end+1):
-        sig_lines.append(lines[k])
-        if "{" in lines[k]:
-            brace_line_idx = k
-            break
-
-    sig_text = "".join(sig_lines)
-    ret = guess_return(sig_text)
-
-    stub = []
-    stub.append("/* " + marker + ": kernel SELinux policydb filename transition APIs differ on this tree.\n")
-    stub.append(" * Stubbing this helper to keep KernelSU-Next building on older/vendor kernels.\n")
-    stub.append(" */\n")
-    stub.extend(sig_lines)
-    stub.append("  /* unsupported policydb filename transition layout on this kernel */\n")
-    stub.append(ret if ret else "")
-    stub.append("}\n")
-
-    out.extend(stub)
-    patched_any = True
-    i = end + 1
-
-# emit remainder
-out.extend(lines[i:])
-
-if patched_any:
-    p.write_text("".join(out))
-    print("Applied sepolicy.c filename transition compat stubs.")
+if not funcs:
+    # if we can't parse, provide an empty TU
+    out.append("/* No functions detected to stub. */\n")
 else:
-    print("No sepolicy.c blocks needed patching.")
+    for name, sig_text in funcs:
+        # Keep signature up to the opening brace, then replace body with stub return.
+        # Normalize signature: ensure it ends with '{\n'
+        sig_text = re.sub(r'\{\s*$', '{\n', sig_text.strip(), flags=re.S) + "\n"
+        out.append(sig_text)
+        out.append("  (void)0;\n")
+        out.append(guess_return(sig_text))
+        out.append("}\n\n")
+
+src.write_text("".join(out))
+print(f"Stubbed {len(funcs)} function(s) in rules.c")
 PY
     fi
   fi
