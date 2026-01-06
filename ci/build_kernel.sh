@@ -216,13 +216,13 @@ PY
 from pathlib import Path
 p = Path("drivers/kernelsu/allowlist.c")
 s = p.read_text(errors="ignore")
-if "KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO" in s:
-    raise SystemExit(0)
 proto = r'''
 /* KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO */
 struct task_struct;
 extern void put_task_struct(struct task_struct *t);
 '''
+if "KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO" in s:
+    raise SystemExit(0)
 lines = s.splitlines(True)
 last_inc = max([i for i,l in enumerate(lines[:200]) if l.lstrip().startswith("#include")], default=-1)
 lines.insert(last_inc + 1 if last_inc != -1 else 0, proto + "\n")
@@ -232,36 +232,20 @@ PY
   fi
 
   # ------------------------------------------------------------
-  # FIX: sepolicy.c is incompatible/corrupted -> stub it safely
-  # This fixes BOTH filename_trans_* errors and the later "htab/#else/#endif" breakage
-  # and ensures non-void functions always return a value.
+  # FIX: rules.c (selinux_state.policy missing) -> stub it
   # ------------------------------------------------------------
-  if [ -f drivers/kernelsu/selinux/sepolicy.c ] && [ -f security/selinux/ss/policydb.h ]; then
-    NEED_STUB=0
-
-    # old policydb layout (your case)
-    if ! grep -qE 'struct[[:space:]]+filename_trans_key[[:space:]]*\{' security/selinux/ss/policydb.h; then
-      NEED_STUB=1
-    fi
-
-    # corrupted/partially patched file patterns seen in your logs
-    if grep -q 'ksu_hash_for_each' drivers/kernelsu/selinux/sepolicy.c; then
-      NEED_STUB=1
-    fi
-
-    if [ "$NEED_STUB" = "1" ]; then
-      python3 - <<'PY'
+  if [ -f drivers/kernelsu/selinux/rules.c ] && grep -q 'selinux_state\.policy' drivers/kernelsu/selinux/rules.c; then
+    python3 - <<'PY'
 import re
 from pathlib import Path
 
-src = Path("drivers/kernelsu/selinux/sepolicy.c")
+src = Path("drivers/kernelsu/selinux/rules.c")
 orig = src.read_text(errors="ignore")
-marker = "KSU_NEXT_CI_COMPAT_SEPOLICY_STUB_SIG_EXTRACT_V1"
+marker = "KSU_NEXT_CI_COMPAT_RULES_STUB_V2"
+if marker in orig:
+    raise SystemExit(0)
 
-# Extract signatures for ksu_* function definitions only.
-# This avoids picking up random macros/top-level junk.
 lines = orig.splitlines(True)
-
 starts = re.compile(r'^\s*(?:bool|int|long|ssize_t|void)\s+(ksu_[A-Za-z0-9_]+)\s*\(')
 
 func_sigs = []
@@ -278,8 +262,6 @@ for ln in lines:
             sig_text = "".join(buf)
             collect = False
             buf = []
-
-            # keep signature up to first '{'
             out_sig = []
             for l in sig_text.splitlines(True):
                 out_sig.append(l)
@@ -287,10 +269,6 @@ for ln in lines:
                     break
             func_sigs.append("".join(out_sig))
 
-# If none found, still produce an empty TU stub (prevents compile failure)
-# but normally KernelSU exposes a bunch of ksu_* functions here.
-
-# Forward-declare structs used in signatures
 structs = set()
 for sig in func_sigs:
     for m in re.finditer(r'\bstruct\s+([A-Za-z_]\w*)\b', sig):
@@ -298,16 +276,13 @@ for sig in func_sigs:
 
 def ret_for(sig: str) -> str:
     head = sig.strip().split("(")[0]
-    if re.search(r'\bvoid\b', head):
-        return ""
-    if re.search(r'\bbool\b', head):
-        return "  return true;\n"
-    if "*" in head:
-        return "  return NULL;\n"
+    if re.search(r'\bvoid\b', head): return ""
+    if re.search(r'\bbool\b', head): return "  return true;\n"
+    if "*" in head: return "  return NULL;\n"
     return "  return 0;\n"
 
 out = []
-out.append(f"/* {marker}: stubbed for incompatible SELinux policydb API on this kernel. */\n")
+out.append(f"/* {marker}: stubbed for old SELinux API (selinux_state.policy missing). */\n")
 out.append("#include <linux/types.h>\n#include <linux/errno.h>\n#include <linux/kernel.h>\n\n")
 for s in sorted(structs):
     out.append(f"struct {s};\n")
@@ -328,9 +303,8 @@ else:
         out.append("}\n\n")
 
 src.write_text("".join(out))
-print(f"Stubbed sepolicy.c exported funcs: {len(func_sigs)}")
+print(f"Stubbed rules.c exported funcs: {len(func_sigs)}")
 PY
-    fi
   fi
 
   # ------------------------------------------------------------
