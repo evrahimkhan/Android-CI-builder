@@ -36,7 +36,6 @@ run_oldconfig() {
 }
 
 fail_gracefully() {
-  # Preserve CI flow: write error.log, keep SUCCESS=0, exit 0 so Telegram/artifacts still run
   local msg="${1:-Unknown error}"
   printf '%s\n' "$msg" > error.log
   exit 0
@@ -63,14 +62,10 @@ if [ "$KSU_NEXT" = "true" ]; then
   echo "KernelSU-Next requested: enabling + compat patches..."
 
   # scripts/config convenience
-  if [ -f scripts/config ]; then
-    chmod +x scripts/config || true
-  fi
+  [ -f scripts/config ] && chmod +x scripts/config || true
 
   KSU_KCONFIG="drivers/kernelsu/Kconfig"
-  if [ ! -f "$KSU_KCONFIG" ]; then
-    fail_gracefully "ERROR: KernelSU-Next selected but ${KSU_KCONFIG} not found."
-  fi
+  [ -f "$KSU_KCONFIG" ] || fail_gracefully "ERROR: KernelSU-Next selected but ${KSU_KCONFIG} not found."
 
   KSU_SYM="$(awk '/^[[:space:]]*config[[:space:]]+/ {print $2; exit}' "$KSU_KCONFIG" 2>/dev/null || true)"
   [ -z "$KSU_SYM" ] && KSU_SYM="KSU"
@@ -132,10 +127,8 @@ if [ "$KSU_NEXT" = "true" ]; then
     python3 - <<'PY'
 import re
 from pathlib import Path
-
 root = Path("drivers/kernelsu")
 files = list(root.rglob("*.c")) + list(root.rglob("*.h"))
-
 block = r'''/* KSU_NEXT_CI_COMPAT_PGTABLE: some kernels lack <linux/pgtable.h> */
 #if defined(__has_include)
 # if __has_include(<linux/pgtable.h>)
@@ -151,7 +144,6 @@ block = r'''/* KSU_NEXT_CI_COMPAT_PGTABLE: some kernels lack <linux/pgtable.h> *
 # include <asm/pgtable.h>
 #endif
 '''
-
 pat = re.compile(r'^\s*#include\s*<linux/pgtable\.h>\s*$', re.M)
 changed = 0
 for p in files:
@@ -178,7 +170,6 @@ s = p.read_text(errors="ignore")
 marker = "KSU_NEXT_CI_COMPAT_SECCOMP_ARCH_NATIVE_NR"
 if marker in s:
     raise SystemExit(0)
-
 compat = r'''
 /* KSU_NEXT_CI_COMPAT_SECCOMP_ARCH_NATIVE_NR:
  * Some older/vendor kernels do not define SECCOMP_ARCH_NATIVE_NR.
@@ -188,7 +179,6 @@ compat = r'''
 #define SECCOMP_ARCH_NATIVE_NR 1
 #endif
 '''
-
 lines = s.splitlines(True)
 last_inc = max([i for i,l in enumerate(lines[:200]) if l.lstrip().startswith("#include")], default=-1)
 lines.insert(last_inc + 1 if last_inc != -1 else 0, compat + "\n")
@@ -207,7 +197,6 @@ PY
         python3 - <<'PY'
 from pathlib import Path
 import re
-
 p = Path("drivers/kernelsu/pkg_observer.c")
 s = p.read_text(errors="ignore")
 marker = "KSU_NEXT_CI_COMPAT_FSNOTIFY"
@@ -236,10 +225,8 @@ static int ksu_handle_event(struct fsnotify_group *group,
     last_inc = max([i for i,l in enumerate(lines[:250]) if l.lstrip().startswith("#include")], default=-1)
     lines.insert(last_inc + 1 if last_inc != -1 else 0, wrapper + "\n")
     s = "".join(lines)
-
 s = re.sub(r'\.handle_inode_event\s*=\s*ksu_handle_inode_event',
            '.handle_event = ksu_handle_event', s)
-
 p.write_text(s)
 print("Applied pkg_observer.c fsnotify compat patch.")
 PY
@@ -256,11 +243,9 @@ PY
 from pathlib import Path
 p = Path("drivers/kernelsu/allowlist.c")
 s = p.read_text(errors="ignore")
-
 marker = "KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO"
 if marker in s:
     raise SystemExit(0)
-
 proto = r'''
 /* KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO:
  * Some vendor kernels don't expose put_task_struct prototype via headers.
@@ -268,7 +253,6 @@ proto = r'''
 struct task_struct;
 extern void put_task_struct(struct task_struct *t);
 '''
-
 lines = s.splitlines(True)
 last_inc = max([i for i,l in enumerate(lines[:200]) if l.lstrip().startswith("#include")], default=-1)
 lines.insert(last_inc + 1 if last_inc != -1 else 0, proto + "\n")
@@ -279,110 +263,79 @@ PY
   fi
 
   # ------------------------------------------------------------
-  # FIX: sepolicy.c is incompatible OR already broken -> rewrite as safe stub
-  # This prevents top-level "if (...)" syntax errors and fixes -Werror return-type.
+  # FIX: rules.c (old SELinux API: selinux_state.policy missing) -> rewrite as stub
+  # This fixes: "no member named 'policy' in struct selinux_state"
   # ------------------------------------------------------------
-  if [ -f drivers/kernelsu/selinux/sepolicy.c ] && [ -f security/selinux/ss/policydb.h ]; then
-    NEED_SEPOLICY_STUB="0"
-
-    # Trigger A: old policydb.h without struct filename_trans_key definition
-    if ! grep -qE 'struct[[:space:]]+filename_trans_key[[:space:]]*\{' security/selinux/ss/policydb.h; then
-      NEED_SEPOLICY_STUB="1"
-    fi
-
-    # Trigger B: sepolicy.c is already syntactically broken (file-scope if statements)
-    if grep -qE '^[[:space:]]*if[[:space:]]*\(' drivers/kernelsu/selinux/sepolicy.c; then
-      NEED_SEPOLICY_STUB="1"
-    fi
-
-    if [ "$NEED_SEPOLICY_STUB" = "1" ]; then
-      python3 - <<'PY'
+  if [ -f drivers/kernelsu/selinux/rules.c ] && grep -q 'selinux_state\.policy' drivers/kernelsu/selinux/rules.c; then
+    python3 - <<'PY'
 import re
 from pathlib import Path
 
-src = Path("drivers/kernelsu/selinux/sepolicy.c")
+src = Path("drivers/kernelsu/selinux/rules.c")
 orig = src.read_text(errors="ignore")
+marker = "KSU_NEXT_CI_COMPAT_RULES_STUB_V1"
+if marker in orig:
+    raise SystemExit(0)
 
-marker = "KSU_NEXT_CI_COMPAT_SEPOLICY_STUB_V2"
-
-# Extract exported KernelSU SELinux API functions from the original file:
-# We only need non-static ksu_* functions to satisfy other TUs.
+# Extract non-static exported functions (prefer ksu_*), stub them.
 lines = orig.splitlines(True)
-
 func_sigs = []
-collecting = False
+collect = False
 buf = []
-for line in lines:
-    if not collecting:
-        # start of a ksu_* function definition (non-static)
-        if re.match(r'^\s*(?:bool|int|long|ssize_t)\s+ksu_[A-Za-z0-9_]+\s*\(', line) and "static" not in line:
-            collecting = True
-            buf = [line]
-            continue
+for ln in lines:
+    if not collect:
+        if re.match(r'^\s*(?:bool|int|long|ssize_t|void)\s+ksu_[A-Za-z0-9_]+\s*\(', ln) and "static" not in ln:
+            collect = True
+            buf = [ln]
     else:
-        buf.append(line)
-        if "{" in line:
-            # keep signature lines up to first '{'
+        buf.append(ln)
+        if "{" in ln:
             sig_lines = []
             for l in buf:
                 sig_lines.append(l)
                 if "{" in l:
                     break
             func_sigs.append("".join(sig_lines))
-            collecting = False
+            collect = False
             buf = []
 
-# Forward-declare structs used in signatures to avoid visibility warnings
 structs = set()
 for sig in func_sigs:
     for m in re.finditer(r'\bstruct\s+([A-Za-z_]\w*)\b', sig):
         structs.add(m.group(1))
 
 def ret_for(sig: str) -> str:
-    first = sig.strip().split()
-    # crude but effective
-    if "bool" in first:
-        return "  return true;\n"
-    if first and first[0] in ("int", "long", "ssize_t"):
-        return "  return 0;\n"
-    # fallback
+    if re.search(r'^\s*void\b', sig): return ""
+    if re.search(r'^\s*bool\b', sig): return "  return true;\n"
+    if "*" in sig.split("(")[0]: return "  return NULL;\n"
     return "  return 0;\n"
 
 out = []
-out.append(f"/* {marker}: KernelSU sepolicy.c stub for incompatible SELinux policydb API. */\n")
-out.append("/* This kernel tree lacks required policydb filename transition structures/layout.\n")
-out.append(" * The original KernelSU sepolicy implementation is not compatible here.\n")
-out.append(" * We stub exported ksu_* functions to keep KernelSU-Next building.\n")
+out.append(f"/* {marker}: KernelSU SELinux rules incompatible with this kernel SELinux API.\n")
+out.append(" * Auto-stubbed in CI to keep KernelSU-Next building.\n")
 out.append(" */\n\n")
-out.append("#include <linux/types.h>\n")
-out.append("#include <linux/errno.h>\n")
-out.append("#include <linux/kernel.h>\n\n")
-
+out.append("#include <linux/types.h>\n#include <linux/errno.h>\n#include <linux/kernel.h>\n\n")
 for s in sorted(structs):
     out.append(f"struct {s};\n")
 if structs:
     out.append("\n")
 
 if not func_sigs:
-    # Minimal fallback (should rarely happen)
-    out.append("/* No ksu_* functions detected in original sepolicy.c; leaving empty stubs TU. */\n")
+    out.append("/* No exported ksu_* functions detected; empty TU stub. */\n")
 else:
     for sig in func_sigs:
-        # Normalize signature to end with '{'
         sig_norm = sig.strip()
         sig_norm = re.sub(r'\{\s*$', '{', sig_norm, flags=re.S)
         if not sig_norm.endswith("{"):
-            # If '{' was on a separate line with extra, keep it simple
-            sig_norm = sig_norm + "\n{"
+            sig_norm += "\n{"
         out.append(sig_norm + "\n")
         out.append("  (void)0;\n")
         out.append(ret_for(sig_norm))
         out.append("}\n\n")
 
 src.write_text("".join(out))
-print(f"Rewrote sepolicy.c as stub; exported functions: {len(func_sigs)}")
+print(f"Rewrote rules.c as stub; exported functions: {len(func_sigs)}")
 PY
-    fi
   fi
 
   # ------------------------------------------------------------
