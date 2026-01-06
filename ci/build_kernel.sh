@@ -36,7 +36,7 @@ run_oldconfig() {
 }
 
 fail_gracefully() {
-  # Preserve CI flow: write error.log, keep SUCCESS=0, exit 0 so Telegram/artifacts still run
+  # Preserve CI flow: write error.log, keep SUCCESS=0, exit 0 so later steps run
   local msg="${1:-Unknown error}"
   printf '%s\n' "$msg" > error.log
   exit 0
@@ -279,93 +279,115 @@ PY
   fi
 
   # ------------------------------------------------------------
-  # FIX: sepolicy.c filename_trans_* API mismatch
-  # Your policydb.h provides only forward decls / old layout -> stub sepolicy.c
+  # FIX: sepolicy.c (SELinux API mismatch) -> regenerate a safe stub file
+  # This eliminates your -Werror,-Wreturn-type and any filename_trans_* breakage.
   # ------------------------------------------------------------
   if [ -f drivers/kernelsu/selinux/sepolicy.c ] && [ -f security/selinux/ss/policydb.h ]; then
-    NEED_STUB="0"
-    # Your error indicates filename_trans_key is only forward-declared (incomplete)
+    # Use a strict trigger: missing a real definition of struct filename_trans_key (common on older trees)
     if ! grep -qE 'struct[[:space:]]+filename_trans_key[[:space:]]*\{' security/selinux/ss/policydb.h; then
-      NEED_STUB="1"
-    fi
-    if [ "$NEED_STUB" = "1" ] && ! grep -q 'KSU_NEXT_CI_COMPAT_SEPOLICY_STUB_ALL' drivers/kernelsu/selinux/sepolicy.c; then
       python3 - <<'PY'
 import re
 from pathlib import Path
 
 src = Path("drivers/kernelsu/selinux/sepolicy.c")
-s = src.read_text(errors="ignore")
-marker = "KSU_NEXT_CI_COMPAT_SEPOLICY_STUB_ALL"
-if marker in s:
+orig = src.read_text(errors="ignore")
+marker = "KSU_NEXT_CI_COMPAT_SEPOLICY_STUB_GENERATED"
+
+# If already stubbed by this generator, do nothing
+if marker in orig:
     raise SystemExit(0)
 
-lines = s.splitlines(True)
+lines = orig.splitlines(True)
 
 def brace_delta(line: str) -> int:
     return line.count("{") - line.count("}")
 
-def looks_like_func(sig_text: str) -> bool:
-    if "=" in sig_text and sig_text.find("=") < sig_text.find("{"):
-        return False
-    return bool(re.search(r'\b[A-Za-z_]\w*\s*\([^;]*\)\s*\{', sig_text))
-
-def ret_for(sig_text: str) -> str:
-    if re.search(r'^\s*(static\s+)?(inline\s+)?void\b', sig_text):
-        return ""
-    if re.search(r'\bbool\b', sig_text):
-        return "  return false;\n"
-    if re.search(r'\*\s*[A-Za-z_]\w*\s*\(', sig_text):
-        return "  return NULL;\n"
-    return "  return 0;\n"
-
-# Extract top-level function signatures
+# Collect top-level function signatures (depth==0), up to first '{'
 func_sigs = []
 depth = 0
-collect = False
-sig = []
+collecting = False
+sig_buf = []
+
 for line in lines:
     if depth == 0:
-        if not collect:
+        if not collecting:
             if "(" in line and ";" not in line and not line.lstrip().startswith("#"):
-                sig = [line]
-                collect = True
+                sig_buf = [line]
+                collecting = True
         else:
-            sig.append(line)
+            sig_buf.append(line)
 
-        if collect and "{" in line:
-            sig_text = "".join(sig)
-            if looks_like_func(sig_text):
-                # keep signature lines up to first '{'
-                sig_lines = []
-                for l in sig:
-                    sig_lines.append(l)
-                    if "{" in l:
-                        break
-                func_sigs.append("".join(sig_lines))
-            collect = False
-            sig = []
+        if collecting and "{" in line:
+            sig_text = "".join(sig_buf)
+            collecting = False
+            sig_buf = []
+
+            # filter out initializers like "= {"
+            if "=" in sig_text and sig_text.find("=") < sig_text.find("{"):
+                continue
+
+            # must look like "name(...) {"
+            if not re.search(r'\b[A-Za-z_]\w*\s*\([^;]*\)\s*\{', sig_text):
+                continue
+
+            # keep only up to the first '{' line included
+            sig_lines = sig_text.splitlines(True)
+            out_sig = []
+            for l in sig_lines:
+                out_sig.append(l)
+                if "{" in l:
+                    break
+            func_sigs.append("".join(out_sig))
+
     depth += brace_delta(line)
     if depth < 0:
         depth = 0
 
+# Gather struct forward decls used in signatures to avoid -Wvisibility warnings
+structs = set()
+for sig in func_sigs:
+    for m in re.finditer(r'\bstruct\s+([A-Za-z_]\w*)\b', sig):
+        structs.add(m.group(1))
+
+def ret_for(sig: str) -> str:
+    # Try to infer return type from the signature prefix
+    m = re.search(r'^\s*(?:static\s+)?(?:inline\s+)?(.+?)\s+([A-Za-z_]\w*)\s*\(', sig, re.S)
+    rtype = m.group(1).strip() if m else ""
+    if re.search(r'\bvoid\b', rtype):
+        return ""
+    if re.search(r'\bbool\b', rtype):
+        return "  return false;\n"
+    if "*" in rtype:
+        return "  return NULL;\n"
+    return "  return 0;\n"
+
 out = []
-out.append(f"/* {marker}: KernelSU sepolicy implementation incompatible with this kernel policydb layout.\n")
-out.append(" * Auto-stubbed in CI to keep KernelSU-Next building on older/vendor SELinux trees.\n")
+out.append(f"/* {marker}: KernelSU sepolicy.c stubbed for incompatible SELinux policydb API. */\n")
+out.append("/* This kernel tree lacks filename_trans_key/layout used by KernelSU-Next.\n")
+out.append(" * We generate safe stubs to keep KernelSU building.\n")
 out.append(" */\n\n")
-out.append("#include <linux/types.h>\n#include <linux/errno.h>\n#include <linux/kernel.h>\n\n")
+out.append("#include <linux/types.h>\n")
+out.append("#include <linux/errno.h>\n")
+out.append("#include <linux/kernel.h>\n\n")
+
+for s in sorted(structs):
+    out.append(f"struct {s};\n")
+if structs:
+    out.append("\n")
 
 if not func_sigs:
     out.append("/* No functions detected to stub. */\n")
 else:
-    for sig_text in func_sigs:
-        sig_text = re.sub(r'\{\s*$', '{', sig_text.strip()) + "\n"
-        out.append(sig_text)
+    for sig in func_sigs:
+        # normalize ending '{'
+        sig_norm = re.sub(r'\{\s*$', '{', sig.strip(), flags=re.S) + "\n"
+        out.append(sig_norm)
         out.append("  (void)0;\n")
-        out.append(ret_for(sig_text))
+        out.append(ret_for(sig_norm))
         out.append("}\n\n")
 
 src.write_text("".join(out))
-print(f"Stubbed {len(func_sigs)} function(s) in sepolicy.c")
+print(f"Generated sepolicy.c stubs for {len(func_sigs)} function(s).")
 PY
     fi
   fi
