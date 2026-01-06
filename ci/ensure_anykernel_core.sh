@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-test -f anykernel/anykernel.sh
+test -f anykernel/anykernel.sh || { echo "Missing anykernel/anykernel.sh"; exit 1; }
 
 if [ ! -f anykernel/tools/ak3-core.sh ]; then
   rm -rf anykernel_upstream
