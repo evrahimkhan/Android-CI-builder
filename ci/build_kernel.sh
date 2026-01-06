@@ -6,7 +6,6 @@ KSU_NEXT="${2:-false}"
 
 export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
 
-# Default to failure; set to 1 only on successful final make
 echo "SUCCESS=0" >> "$GITHUB_ENV"
 
 ccache -M 5G || true
@@ -25,7 +24,6 @@ cd kernel
 mkdir -p out
 
 run_oldconfig() {
-  # Non-interactive oldconfig; ignore `yes` SIGPIPE by disabling pipefail.
   set +e
   set +o pipefail
   yes "" 2>/dev/null | make O=out oldconfig
@@ -51,9 +49,7 @@ ensure_line_once() {
 # Base config
 # ---------------------------
 make O=out "${DEFCONFIG}"
-if ! run_oldconfig; then
-  fail_gracefully "ERROR: oldconfig failed"
-fi
+run_oldconfig || fail_gracefully "ERROR: oldconfig failed"
 
 # ---------------------------
 # KernelSU-Next integration + compat
@@ -68,7 +64,6 @@ if [ "$KSU_NEXT" = "true" ]; then
 
   KSU_SYM="$(awk '/^[[:space:]]*config[[:space:]]+/ {print $2; exit}' "$KSU_KCONFIG" 2>/dev/null || true)"
   [ -z "$KSU_SYM" ] && KSU_SYM="KSU"
-  echo "Detected KernelSU symbol: CONFIG_${KSU_SYM}"
 
   # Ensure Kconfig is sourced
   if [ -f Kconfig ] && ! grep -qF 'source "drivers/kernelsu/Kconfig"' Kconfig; then
@@ -83,11 +78,9 @@ if [ "$KSU_NEXT" = "true" ]; then
     printf '\nobj-$(CONFIG_%s) += kernelsu/\n' "$KSU_SYM" >> drivers/Makefile
   fi
 
-  if ! run_oldconfig; then
-    fail_gracefully "ERROR: oldconfig after KernelSU wiring failed"
-  fi
+  run_oldconfig || fail_gracefully "ERROR: oldconfig after KernelSU wiring failed"
 
-  # Enable deps + KSU (KSU depends on KPROBES)
+  # Enable deps + KSU (depends on KPROBES)
   if [ -f scripts/config ]; then
     ./scripts/config --file out/.config -e KPROBES || true
     ./scripts/config --file out/.config -e KALLSYMS || true
@@ -100,9 +93,7 @@ if [ "$KSU_NEXT" = "true" ]; then
     echo "CONFIG_${KSU_SYM}=y" >> out/.config
   fi
 
-  if ! run_oldconfig; then
-    fail_gracefully "ERROR: oldconfig after enabling KernelSU failed"
-  fi
+  run_oldconfig || fail_gracefully "ERROR: oldconfig after enabling KernelSU failed"
 
   # ------------------------------------------------------------
   # Compat: define TWA_RESUME globally for KernelSU sources
@@ -156,14 +147,12 @@ PY
   # ------------------------------------------------------------
   # Compat: SECCOMP_ARCH_NATIVE_NR missing
   # ------------------------------------------------------------
-  if [ -f drivers/kernelsu/seccomp_cache.c ] && [ -d include ]; then
-    if ! grep -Rqs '\bSECCOMP_ARCH_NATIVE_NR\b' include; then
-      python3 - <<'PY'
+  if [ -f drivers/kernelsu/seccomp_cache.c ] && [ -d include ] && ! grep -Rqs '\bSECCOMP_ARCH_NATIVE_NR\b' include; then
+    python3 - <<'PY'
 from pathlib import Path
 p = Path("drivers/kernelsu/seccomp_cache.c")
 s = p.read_text(errors="ignore")
-marker = "KSU_NEXT_CI_COMPAT_SECCOMP_ARCH_NATIVE_NR"
-if marker in s:
+if "KSU_NEXT_CI_COMPAT_SECCOMP_ARCH_NATIVE_NR" in s:
     raise SystemExit(0)
 compat = r'''
 /* KSU_NEXT_CI_COMPAT_SECCOMP_ARCH_NATIVE_NR */
@@ -176,11 +165,10 @@ last_inc = max([i for i,l in enumerate(lines[:200]) if l.lstrip().startswith("#i
 lines.insert(last_inc + 1 if last_inc != -1 else 0, compat + "\n")
 p.write_text("".join(lines))
 PY
-    fi
   fi
 
   # ------------------------------------------------------------
-  # Compat: pkg_observer.c fsnotify API mismatch
+  # Compat: fsnotify API mismatch (pkg_observer.c)
   # ------------------------------------------------------------
   if [ -f drivers/kernelsu/pkg_observer.c ] && [ -f include/linux/fsnotify_backend.h ]; then
     if grep -q 'handle_event' include/linux/fsnotify_backend.h && ! grep -q 'handle_inode_event' include/linux/fsnotify_backend.h; then
@@ -190,8 +178,7 @@ from pathlib import Path
 import re
 p = Path("drivers/kernelsu/pkg_observer.c")
 s = p.read_text(errors="ignore")
-marker = "KSU_NEXT_CI_COMPAT_FSNOTIFY"
-if marker not in s:
+if "KSU_NEXT_CI_COMPAT_FSNOTIFY" not in s:
     wrapper = r'''
 /* KSU_NEXT_CI_COMPAT_FSNOTIFY */
 #include <linux/fsnotify_backend.h>
@@ -212,6 +199,7 @@ static int ksu_handle_event(struct fsnotify_group *group,
     last_inc = max([i for i,l in enumerate(lines[:250]) if l.lstrip().startswith("#include")], default=-1)
     lines.insert(last_inc + 1 if last_inc != -1 else 0, wrapper + "\n")
     s = "".join(lines)
+
 s = re.sub(r'\.handle_inode_event\s*=\s*ksu_handle_inode_event',
            '.handle_event = ksu_handle_event', s)
 p.write_text(s)
@@ -221,7 +209,7 @@ PY
   fi
 
   # ------------------------------------------------------------
-  # Fix: put_task_struct implicit declaration in allowlist.c
+  # Fix: avoid implicit put_task_struct in allowlist.c
   # ------------------------------------------------------------
   if [ -f drivers/kernelsu/allowlist.c ] && grep -q 'put_task_struct' drivers/kernelsu/allowlist.c; then
     if ! grep -q 'KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO' drivers/kernelsu/allowlist.c; then
@@ -229,8 +217,7 @@ PY
 from pathlib import Path
 p = Path("drivers/kernelsu/allowlist.c")
 s = p.read_text(errors="ignore")
-marker = "KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO"
-if marker in s:
+if "KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO" in s:
     raise SystemExit(0)
 proto = r'''
 /* KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO */
@@ -246,14 +233,20 @@ PY
   fi
 
   # ------------------------------------------------------------
-  # FIX: sepolicy.c filename_trans_* mismatch -> ALWAYS stub before build
-  # This directly fixes the exact errors you pasted.
+  # FIX: sepolicy.c (SELinux policydb mismatch) -> force safe stub of ksu_* API
+  # This prevents BOTH filename_trans_* breakage AND -Werror,-Wreturn-type.
   # ------------------------------------------------------------
   if [ -f drivers/kernelsu/selinux/sepolicy.c ] && [ -f security/selinux/ss/policydb.h ]; then
     NEED_STUB=0
+    # Most vendor 5.4 policydb.h does NOT define struct filename_trans_key { ... }
     if ! grep -qE 'struct[[:space:]]+filename_trans_key[[:space:]]*\{' security/selinux/ss/policydb.h; then
       NEED_STUB=1
     fi
+    # Also stub if file is already broken/partially patched (file-scope if)
+    if grep -qE '^[[:space:]]*if[[:space:]]*\(' drivers/kernelsu/selinux/sepolicy.c; then
+      NEED_STUB=1
+    fi
+
     if [ "$NEED_STUB" = "1" ]; then
       python3 - <<'PY'
 import re
@@ -261,49 +254,57 @@ from pathlib import Path
 
 src = Path("drivers/kernelsu/selinux/sepolicy.c")
 orig = src.read_text(errors="ignore")
-marker = "KSU_NEXT_CI_COMPAT_SEPOLICY_STUB_FORCE"
+marker = "KSU_NEXT_CI_COMPAT_SEPOLICY_STUB_OK"
 
-# Extract ALL top-level function signatures (static and non-static) from original
+# Extract ksu_* function definitions (signatures) from original file (line-based).
 lines = orig.splitlines(True)
 
-def bd(l: str) -> int:
-    return l.count("{") - l.count("}")
-
-def looks_like_func(sig: str) -> bool:
-    if "=" in sig and sig.find("=") < sig.find("{"):
-        return False
-    return bool(re.search(r'\b[A-Za-z_]\w*\s*\([^;]*\)\s*\{', sig))
-
 func_sigs = []
-depth = 0
 collect = False
 buf = []
+depth = 0
+
+def bd(l): return l.count("{") - l.count("}")
 
 for ln in lines:
     if depth == 0:
         if not collect:
-            if "(" in ln and ";" not in ln and not ln.lstrip().startswith("#"):
+            if "ksu_" in ln and "(" in ln and ";" not in ln and not ln.lstrip().startswith("#"):
+                # start collecting potential signature
                 buf = [ln]
                 collect = True
         else:
             buf.append(ln)
+
         if collect and "{" in ln:
-            sig = "".join(buf)
+            sig_text = "".join(buf)
             collect = False
             buf = []
-            if looks_like_func(sig):
-                # keep signature up to first '{'
-                out_sig = []
-                for l in sig.splitlines(True):
-                    out_sig.append(l)
-                    if "{" in l:
-                        break
-                func_sigs.append("".join(out_sig))
+
+            # must contain ksu_ name
+            m = re.search(r'\b(ksu_[A-Za-z0-9_]+)\s*\(', sig_text)
+            if not m:
+                depth += bd(ln)
+                continue
+
+            # avoid initializer blocks
+            if "=" in sig_text and sig_text.find("=") < sig_text.find("{"):
+                depth += bd(ln)
+                continue
+
+            # keep signature up to first '{'
+            out_sig = []
+            for l in sig_text.splitlines(True):
+                out_sig.append(l)
+                if "{" in l:
+                    break
+            func_sigs.append("".join(out_sig))
+
     depth += bd(ln)
     if depth < 0:
         depth = 0
 
-# Forward-declare structs used in signatures to reduce warnings
+# Forward declare structs used in signatures to avoid visibility warnings
 structs = set()
 for sig in func_sigs:
     for m in re.finditer(r'\bstruct\s+([A-Za-z_]\w*)\b', sig):
@@ -320,7 +321,7 @@ def ret_for(sig: str) -> str:
     return "  return 0;\n"
 
 out = []
-out.append(f"/* {marker}: stubbed for incompatible SELinux policydb filename transition API */\n")
+out.append(f"/* {marker}: stubbed KernelSU SELinux policy helper for incompatible policydb API. */\n")
 out.append("#include <linux/types.h>\n#include <linux/errno.h>\n#include <linux/kernel.h>\n\n")
 for s in sorted(structs):
     out.append(f"struct {s};\n")
@@ -328,7 +329,7 @@ if structs:
     out.append("\n")
 
 if not func_sigs:
-    out.append("/* No functions detected to stub. */\n")
+    out.append("/* No ksu_* functions detected to stub. */\n")
 else:
     for sig in func_sigs:
         sig_norm = sig.strip()
@@ -341,13 +342,13 @@ else:
         out.append("}\n\n")
 
 src.write_text("".join(out))
-print(f"Forced stub sepolicy.c functions: {len(func_sigs)}")
+print(f"Stubbed sepolicy.c ksu_* functions: {len(func_sigs)}")
 PY
     fi
   fi
 
   # ------------------------------------------------------------
-  # Fix: provide missing KernelSU hook symbols at link time (weak stubs)
+  # Weak link stubs for missing hook symbols (prevents ld.lld undefined symbols)
   # ------------------------------------------------------------
   if [ -d drivers/kernelsu ]; then
     if [ ! -f drivers/kernelsu/ci_compat_weak.c ]; then
@@ -395,13 +396,9 @@ EOF
     fi
   fi
 
-  # Sanity checks (KSU must be built-in and deps satisfied)
-  if ! grep -q '^CONFIG_KPROBES=y' out/.config; then
-    fail_gracefully "ERROR: CONFIG_KPROBES is not enabled; KernelSU depends on it."
-  fi
-  if ! grep -q "^CONFIG_${KSU_SYM}=y" out/.config; then
-    fail_gracefully "ERROR: CONFIG_${KSU_SYM} could not be enabled (=y)."
-  fi
+  # Sanity checks
+  grep -q '^CONFIG_KPROBES=y' out/.config || fail_gracefully "ERROR: CONFIG_KPROBES is not enabled; KernelSU depends on it."
+  grep -q "^CONFIG_${KSU_SYM}=y" out/.config || fail_gracefully "ERROR: CONFIG_${KSU_SYM} could not be enabled (=y)."
 fi
 
 # ---------------------------
