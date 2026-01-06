@@ -20,7 +20,7 @@ on:
         required: true
         type: string
       base_boot_img_url:
-        description: Optional URL to a base boot.img (improves boot.img repack accuracy)
+        description: Optional URL to a base boot.img for repacking boot.img
         required: false
         default: ""
         type: string
@@ -37,7 +37,6 @@ jobs:
       TG_TOKEN: ${{ secrets.TG_TOKEN }}
       TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       CCACHE_DIR: ${{ github.workspace }}/.ccache
-      BASE_BOOT_IMG_URL: ${{ inputs.base_boot_img_url }}
 
     steps:
       - name: Checkout this repo
@@ -55,6 +54,16 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: ci/install_deps.sh
+
+      - name: Cache AOSP mkbootimg
+        uses: actions/cache@v4
+        with:
+          path: aosp-mkbootimg
+          key: aosp-mkbootimg-v1
+
+      - name: Setup AOSP mkbootimg
+        shell: bash
+        run: ci/setup_aosp_mkbootimg.sh
 
       - name: Restore Proton Clang cache
         uses: actions/cache@v4
@@ -101,15 +110,10 @@ jobs:
         shell: bash
         run: ci/ensure_anykernel_core.sh
 
-      - name: Package AnyKernel3
+      - name: Package AnyKernel and boot.img
         if: env.SUCCESS == '1'
         shell: bash
-        run: ci/package_anykernel.sh "${{ inputs.device }}"
-
-      - name: Make boot.img
-        if: env.SUCCESS == '1'
-        shell: bash
-        run: ci/make_boot_img.sh "${{ inputs.device }}" "${{ inputs.base_boot_img_url }}"
+        run: ci/package_anykernel.sh "${{ inputs.device }}" "${{ inputs.base_boot_img_url }}"
 
       - name: Upload artifacts
         if: always()
