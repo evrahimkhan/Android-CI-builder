@@ -61,7 +61,6 @@ fi
 if [ "$KSU_NEXT" = "true" ]; then
   echo "KernelSU-Next requested: enabling + compat patches..."
 
-  # scripts/config convenience
   [ -f scripts/config ] && chmod +x scripts/config || true
 
   KSU_KCONFIG="drivers/kernelsu/Kconfig"
@@ -116,7 +115,6 @@ if [ "$KSU_NEXT" = "true" ]; then
         echo
       } | cat - drivers/kernelsu/Makefile > drivers/kernelsu/Makefile.tmp
       mv drivers/kernelsu/Makefile.tmp drivers/kernelsu/Makefile
-      echo "Applied KernelSU Makefile compat: ccflags-y += -DTWA_RESUME=1"
     fi
   fi
 
@@ -145,7 +143,6 @@ block = r'''/* KSU_NEXT_CI_COMPAT_PGTABLE: some kernels lack <linux/pgtable.h> *
 #endif
 '''
 pat = re.compile(r'^\s*#include\s*<linux/pgtable\.h>\s*$', re.M)
-changed = 0
 for p in files:
     s = p.read_text(errors="ignore")
     if "KSU_NEXT_CI_COMPAT_PGTABLE" in s:
@@ -153,8 +150,6 @@ for p in files:
     if not pat.search(s):
         continue
     p.write_text(pat.sub(block, s, count=1))
-    changed += 1
-print(f"Applied pgtable compat patch to {changed} file(s).")
 PY
   fi
 
@@ -171,10 +166,7 @@ marker = "KSU_NEXT_CI_COMPAT_SECCOMP_ARCH_NATIVE_NR"
 if marker in s:
     raise SystemExit(0)
 compat = r'''
-/* KSU_NEXT_CI_COMPAT_SECCOMP_ARCH_NATIVE_NR:
- * Some older/vendor kernels do not define SECCOMP_ARCH_NATIVE_NR.
- * Treat native-arch count as 1 in that case.
- */
+/* KSU_NEXT_CI_COMPAT_SECCOMP_ARCH_NATIVE_NR */
 #ifndef SECCOMP_ARCH_NATIVE_NR
 #define SECCOMP_ARCH_NATIVE_NR 1
 #endif
@@ -183,7 +175,6 @@ lines = s.splitlines(True)
 last_inc = max([i for i,l in enumerate(lines[:200]) if l.lstrip().startswith("#include")], default=-1)
 lines.insert(last_inc + 1 if last_inc != -1 else 0, compat + "\n")
 p.write_text("".join(lines))
-print("Applied seccomp_cache.c SECCOMP_ARCH_NATIVE_NR compat patch.")
 PY
     fi
   fi
@@ -202,15 +193,11 @@ s = p.read_text(errors="ignore")
 marker = "KSU_NEXT_CI_COMPAT_FSNOTIFY"
 if marker not in s:
     wrapper = r'''
-/* KSU_NEXT_CI_COMPAT_FSNOTIFY: adapt KernelSU fsnotify code for kernels
- * where fsnotify_ops uses .handle_event (not .handle_inode_event).
- */
+/* KSU_NEXT_CI_COMPAT_FSNOTIFY */
 #include <linux/fsnotify_backend.h>
-
 static int ksu_handle_inode_event(struct fsnotify_mark *mark, u32 mask,
                                   struct inode *inode, struct inode *dir,
                                   const struct qstr *file_name, u32 cookie);
-
 static int ksu_handle_event(struct fsnotify_group *group,
                             struct inode *inode, u32 mask,
                             const void *data, int data_type,
@@ -228,7 +215,6 @@ static int ksu_handle_event(struct fsnotify_group *group,
 s = re.sub(r'\.handle_inode_event\s*=\s*ksu_handle_inode_event',
            '.handle_event = ksu_handle_event', s)
 p.write_text(s)
-print("Applied pkg_observer.c fsnotify compat patch.")
 PY
       fi
     fi
@@ -247,9 +233,7 @@ marker = "KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO"
 if marker in s:
     raise SystemExit(0)
 proto = r'''
-/* KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO:
- * Some vendor kernels don't expose put_task_struct prototype via headers.
- */
+/* KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO */
 struct task_struct;
 extern void put_task_struct(struct task_struct *t);
 '''
@@ -257,63 +241,86 @@ lines = s.splitlines(True)
 last_inc = max([i for i,l in enumerate(lines[:200]) if l.lstrip().startswith("#include")], default=-1)
 lines.insert(last_inc + 1 if last_inc != -1 else 0, proto + "\n")
 p.write_text("".join(lines))
-print("Injected put_task_struct prototype into allowlist.c")
 PY
     fi
   fi
 
   # ------------------------------------------------------------
-  # FIX: rules.c (old SELinux API: selinux_state.policy missing) -> rewrite as stub
-  # This fixes: "no member named 'policy' in struct selinux_state"
+  # FIX: sepolicy.c filename_trans_* mismatch -> ALWAYS stub before build
+  # This directly fixes the exact errors you pasted.
   # ------------------------------------------------------------
-  if [ -f drivers/kernelsu/selinux/rules.c ] && grep -q 'selinux_state\.policy' drivers/kernelsu/selinux/rules.c; then
-    python3 - <<'PY'
+  if [ -f drivers/kernelsu/selinux/sepolicy.c ] && [ -f security/selinux/ss/policydb.h ]; then
+    NEED_STUB=0
+    if ! grep -qE 'struct[[:space:]]+filename_trans_key[[:space:]]*\{' security/selinux/ss/policydb.h; then
+      NEED_STUB=1
+    fi
+    if [ "$NEED_STUB" = "1" ]; then
+      python3 - <<'PY'
 import re
 from pathlib import Path
 
-src = Path("drivers/kernelsu/selinux/rules.c")
+src = Path("drivers/kernelsu/selinux/sepolicy.c")
 orig = src.read_text(errors="ignore")
-marker = "KSU_NEXT_CI_COMPAT_RULES_STUB_V1"
-if marker in orig:
-    raise SystemExit(0)
+marker = "KSU_NEXT_CI_COMPAT_SEPOLICY_STUB_FORCE"
 
-# Extract non-static exported functions (prefer ksu_*), stub them.
+# Extract ALL top-level function signatures (static and non-static) from original
 lines = orig.splitlines(True)
+
+def bd(l: str) -> int:
+    return l.count("{") - l.count("}")
+
+def looks_like_func(sig: str) -> bool:
+    if "=" in sig and sig.find("=") < sig.find("{"):
+        return False
+    return bool(re.search(r'\b[A-Za-z_]\w*\s*\([^;]*\)\s*\{', sig))
+
 func_sigs = []
+depth = 0
 collect = False
 buf = []
+
 for ln in lines:
-    if not collect:
-        if re.match(r'^\s*(?:bool|int|long|ssize_t|void)\s+ksu_[A-Za-z0-9_]+\s*\(', ln) and "static" not in ln:
-            collect = True
-            buf = [ln]
-    else:
-        buf.append(ln)
-        if "{" in ln:
-            sig_lines = []
-            for l in buf:
-                sig_lines.append(l)
-                if "{" in l:
-                    break
-            func_sigs.append("".join(sig_lines))
+    if depth == 0:
+        if not collect:
+            if "(" in ln and ";" not in ln and not ln.lstrip().startswith("#"):
+                buf = [ln]
+                collect = True
+        else:
+            buf.append(ln)
+        if collect and "{" in ln:
+            sig = "".join(buf)
             collect = False
             buf = []
+            if looks_like_func(sig):
+                # keep signature up to first '{'
+                out_sig = []
+                for l in sig.splitlines(True):
+                    out_sig.append(l)
+                    if "{" in l:
+                        break
+                func_sigs.append("".join(out_sig))
+    depth += bd(ln)
+    if depth < 0:
+        depth = 0
 
+# Forward-declare structs used in signatures to reduce warnings
 structs = set()
 for sig in func_sigs:
     for m in re.finditer(r'\bstruct\s+([A-Za-z_]\w*)\b', sig):
         structs.add(m.group(1))
 
 def ret_for(sig: str) -> str:
-    if re.search(r'^\s*void\b', sig): return ""
-    if re.search(r'^\s*bool\b', sig): return "  return true;\n"
-    if "*" in sig.split("(")[0]: return "  return NULL;\n"
+    head = sig.strip().split("(")[0]
+    if re.search(r'\bvoid\b', head):
+        return ""
+    if re.search(r'\bbool\b', head):
+        return "  return true;\n"
+    if "*" in head:
+        return "  return NULL;\n"
     return "  return 0;\n"
 
 out = []
-out.append(f"/* {marker}: KernelSU SELinux rules incompatible with this kernel SELinux API.\n")
-out.append(" * Auto-stubbed in CI to keep KernelSU-Next building.\n")
-out.append(" */\n\n")
+out.append(f"/* {marker}: stubbed for incompatible SELinux policydb filename transition API */\n")
 out.append("#include <linux/types.h>\n#include <linux/errno.h>\n#include <linux/kernel.h>\n\n")
 for s in sorted(structs):
     out.append(f"struct {s};\n")
@@ -321,7 +328,7 @@ if structs:
     out.append("\n")
 
 if not func_sigs:
-    out.append("/* No exported ksu_* functions detected; empty TU stub. */\n")
+    out.append("/* No functions detected to stub. */\n")
 else:
     for sig in func_sigs:
         sig_norm = sig.strip()
@@ -334,8 +341,9 @@ else:
         out.append("}\n\n")
 
 src.write_text("".join(out))
-print(f"Rewrote rules.c as stub; exported functions: {len(func_sigs)}")
+print(f"Forced stub sepolicy.c functions: {len(func_sigs)}")
 PY
+    fi
   fi
 
   # ------------------------------------------------------------
@@ -345,68 +353,39 @@ PY
     if [ ! -f drivers/kernelsu/ci_compat_weak.c ]; then
       cat > drivers/kernelsu/ci_compat_weak.c <<'EOF'
 // SPDX-License-Identifier: GPL-2.0
-/*
- * CI compatibility weak stubs
- *
- * Some vendor trees + KernelSU patches may reference KernelSU hook symbols
- * in core kernel code. If real implementations are missing due to API
- * mismatches, these weak stubs prevent link failure.
- *
- * If KernelSU provides strong definitions, they override these.
- */
-
 #include <linux/types.h>
 #include <linux/fs.h>
 #include <linux/input.h>
 #include <linux/sched.h>
 #include <linux/uaccess.h>
-
 struct filename;
 
 __attribute__((weak))
 int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user *arg)
-{
-	(void)magic1; (void)magic2; (void)cmd; (void)arg;
-	return 0;
-}
+{ (void)magic1; (void)magic2; (void)cmd; (void)arg; return 0; }
 
 __attribute__((weak))
 long ksu_handle_sys_read(unsigned int fd, char __user *buf, size_t count)
-{
-	(void)fd; (void)buf; (void)count;
-	return 0;
-}
+{ (void)fd; (void)buf; (void)count; return 0; }
 
 __attribute__((weak))
 ssize_t ksu_vfs_read_hook(struct file *file, char __user *buf, size_t count, loff_t *pos)
-{
-	(void)file; (void)buf; (void)count; (void)pos;
-	return 0;
-}
+{ (void)file; (void)buf; (void)count; (void)pos; return 0; }
 
 __attribute__((weak))
 int ksu_handle_execveat(int fd, struct filename *filename,
-			const char __user *const __user *argv,
-			const char __user *const __user *envp,
-			int flags)
-{
-	(void)fd; (void)filename; (void)argv; (void)envp; (void)flags;
-	return 0;
-}
+                        const char __user *const __user *argv,
+                        const char __user *const __user *envp, int flags)
+{ (void)fd; (void)filename; (void)argv; (void)envp; (void)flags; return 0; }
 
 __attribute__((weak))
 void ksu_input_hook(struct input_dev *dev, unsigned int type, unsigned int code, int value)
-{
-	(void)dev; (void)type; (void)code; (void)value;
-}
+{ (void)dev; (void)type; (void)code; (void)value; }
 
 __attribute__((weak))
 void put_task_struct(struct task_struct *t)
-{
-	(void)t;
-}
+{ (void)t; }
 EOF
-      echo "Created drivers/kernelsu/ci_compat_weak.c"
     fi
 
     if [ -f drivers/kernelsu/Makefile ]; then
