@@ -1,3 +1,4 @@
+
 # --- boot.img generation (AOSP mkbootimg on PATH from ci/setup_aosp_mkbootimg.sh) ---
 OUT_BOOT="boot-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.img"
 echo "BOOT_IMG_NAME=${OUT_BOOT}" >> "$GITHUB_ENV"
