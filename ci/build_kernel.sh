@@ -80,7 +80,7 @@ if [ "$KSU_NEXT" = "true" ]; then
 
   run_oldconfig || fail_gracefully "ERROR: oldconfig after KernelSU wiring failed"
 
-  # Enable deps + KSU (depends on KPROBES)
+  # Enable deps + KSU (KSU depends on KPROBES)
   if [ -f scripts/config ]; then
     ./scripts/config --file out/.config -e KPROBES || true
     ./scripts/config --file out/.config -e KALLSYMS || true
@@ -199,7 +199,6 @@ static int ksu_handle_event(struct fsnotify_group *group,
     last_inc = max([i for i,l in enumerate(lines[:250]) if l.lstrip().startswith("#include")], default=-1)
     lines.insert(last_inc + 1 if last_inc != -1 else 0, wrapper + "\n")
     s = "".join(lines)
-
 s = re.sub(r'\.handle_inode_event\s*=\s*ksu_handle_inode_event',
            '.handle_event = ksu_handle_event', s)
 p.write_text(s)
@@ -212,7 +211,7 @@ PY
   # Fix: avoid implicit put_task_struct in allowlist.c
   # ------------------------------------------------------------
   if [ -f drivers/kernelsu/allowlist.c ] && grep -q 'put_task_struct' drivers/kernelsu/allowlist.c; then
-    if ! grep -q 'KSU_NEXT_CI_COMPAT_PUT_TASK_STRUCT_PROTO' drivers/kernelsu/allowlist.c; then
+    if ! grep -q 'extern void put_task_struct' drivers/kernelsu/allowlist.c; then
       python3 - <<'PY'
 from pathlib import Path
 p = Path("drivers/kernelsu/allowlist.c")
@@ -233,17 +232,20 @@ PY
   fi
 
   # ------------------------------------------------------------
-  # FIX: sepolicy.c (SELinux policydb mismatch) -> force safe stub of ksu_* API
-  # This prevents BOTH filename_trans_* breakage AND -Werror,-Wreturn-type.
+  # FIX: sepolicy.c is incompatible/corrupted -> stub it safely
+  # This fixes BOTH filename_trans_* errors and the later "htab/#else/#endif" breakage
+  # and ensures non-void functions always return a value.
   # ------------------------------------------------------------
   if [ -f drivers/kernelsu/selinux/sepolicy.c ] && [ -f security/selinux/ss/policydb.h ]; then
     NEED_STUB=0
-    # Most vendor 5.4 policydb.h does NOT define struct filename_trans_key { ... }
+
+    # old policydb layout (your case)
     if ! grep -qE 'struct[[:space:]]+filename_trans_key[[:space:]]*\{' security/selinux/ss/policydb.h; then
       NEED_STUB=1
     fi
-    # Also stub if file is already broken/partially patched (file-scope if)
-    if grep -qE '^[[:space:]]*if[[:space:]]*\(' drivers/kernelsu/selinux/sepolicy.c; then
+
+    # corrupted/partially patched file patterns seen in your logs
+    if grep -q 'ksu_hash_for_each' drivers/kernelsu/selinux/sepolicy.c; then
       NEED_STUB=1
     fi
 
@@ -254,43 +256,28 @@ from pathlib import Path
 
 src = Path("drivers/kernelsu/selinux/sepolicy.c")
 orig = src.read_text(errors="ignore")
-marker = "KSU_NEXT_CI_COMPAT_SEPOLICY_STUB_OK"
+marker = "KSU_NEXT_CI_COMPAT_SEPOLICY_STUB_SIG_EXTRACT_V1"
 
-# Extract ksu_* function definitions (signatures) from original file (line-based).
+# Extract signatures for ksu_* function definitions only.
+# This avoids picking up random macros/top-level junk.
 lines = orig.splitlines(True)
+
+starts = re.compile(r'^\s*(?:bool|int|long|ssize_t|void)\s+(ksu_[A-Za-z0-9_]+)\s*\(')
 
 func_sigs = []
 collect = False
 buf = []
-depth = 0
-
-def bd(l): return l.count("{") - l.count("}")
-
 for ln in lines:
-    if depth == 0:
-        if not collect:
-            if "ksu_" in ln and "(" in ln and ";" not in ln and not ln.lstrip().startswith("#"):
-                # start collecting potential signature
-                buf = [ln]
-                collect = True
-        else:
-            buf.append(ln)
-
-        if collect and "{" in ln:
+    if not collect:
+        if starts.match(ln) and "static" not in ln:
+            collect = True
+            buf = [ln]
+    else:
+        buf.append(ln)
+        if "{" in ln:
             sig_text = "".join(buf)
             collect = False
             buf = []
-
-            # must contain ksu_ name
-            m = re.search(r'\b(ksu_[A-Za-z0-9_]+)\s*\(', sig_text)
-            if not m:
-                depth += bd(ln)
-                continue
-
-            # avoid initializer blocks
-            if "=" in sig_text and sig_text.find("=") < sig_text.find("{"):
-                depth += bd(ln)
-                continue
 
             # keep signature up to first '{'
             out_sig = []
@@ -300,11 +287,10 @@ for ln in lines:
                     break
             func_sigs.append("".join(out_sig))
 
-    depth += bd(ln)
-    if depth < 0:
-        depth = 0
+# If none found, still produce an empty TU stub (prevents compile failure)
+# but normally KernelSU exposes a bunch of ksu_* functions here.
 
-# Forward declare structs used in signatures to avoid visibility warnings
+# Forward-declare structs used in signatures
 structs = set()
 for sig in func_sigs:
     for m in re.finditer(r'\bstruct\s+([A-Za-z_]\w*)\b', sig):
@@ -321,7 +307,7 @@ def ret_for(sig: str) -> str:
     return "  return 0;\n"
 
 out = []
-out.append(f"/* {marker}: stubbed KernelSU SELinux policy helper for incompatible policydb API. */\n")
+out.append(f"/* {marker}: stubbed for incompatible SELinux policydb API on this kernel. */\n")
 out.append("#include <linux/types.h>\n#include <linux/errno.h>\n#include <linux/kernel.h>\n\n")
 for s in sorted(structs):
     out.append(f"struct {s};\n")
@@ -329,7 +315,7 @@ if structs:
     out.append("\n")
 
 if not func_sigs:
-    out.append("/* No ksu_* functions detected to stub. */\n")
+    out.append("/* No exported ksu_* functions detected; empty stub TU. */\n")
 else:
     for sig in func_sigs:
         sig_norm = sig.strip()
@@ -342,7 +328,7 @@ else:
         out.append("}\n\n")
 
 src.write_text("".join(out))
-print(f"Stubbed sepolicy.c ksu_* functions: {len(func_sigs)}")
+print(f"Stubbed sepolicy.c exported funcs: {len(func_sigs)}")
 PY
     fi
   fi
