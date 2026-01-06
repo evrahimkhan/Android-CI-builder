@@ -1,3 +1,4 @@
+
 name: Android Kernel CI
 
 on:
@@ -19,14 +20,6 @@ on:
         description: Kernel defconfig (e.g. vendor/moonstone_defconfig)
         required: true
         type: string
-      kernelsu_next:
-        description: Enable KernelSU-Next
-        required: true
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
 
 jobs:
   build:
@@ -81,11 +74,6 @@ jobs:
         shell: bash
         run: ci/clone_kernel.sh "${{ inputs.kernel_source }}" "${{ inputs.kernel_branch }}"
 
-      - name: Apply KernelSU-Next
-        if: ${{ inputs.kernelsu_next == 'true' }}
-        shell: bash
-        run: ci/apply_kernelsu_next.sh
-
       - name: Patch unsupported Polly flags
         shell: bash
         run: ci/patch_polly.sh
@@ -93,11 +81,11 @@ jobs:
       - name: Telegram Build Start
         if: ${{ env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
-        run: ci/telegram.sh start "${{ inputs.device }}" "${{ inputs.kernel_branch }}" "${{ inputs.defconfig }}" "${{ inputs.kernelsu_next }}"
+        run: ci/telegram.sh start "${{ inputs.device }}" "${{ inputs.kernel_branch }}" "${{ inputs.defconfig }}"
 
       - name: Build Kernel
         shell: bash
-        run: ci/build_kernel.sh "${{ inputs.defconfig }}" "${{ inputs.kernelsu_next }}"
+        run: ci/build_kernel.sh "${{ inputs.defconfig }}"
 
       - name: Detect GKI
         shell: bash
@@ -137,12 +125,12 @@ jobs:
       - name: Telegram Success
         if: ${{ env.SUCCESS == '1' && env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
-        run: ci/telegram.sh success "${{ inputs.device }}" "${{ inputs.kernelsu_next }}"
+        run: ci/telegram.sh success "${{ inputs.device }}"
 
       - name: Telegram Failure
         if: ${{ env.SUCCESS == '0' && env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
-        run: ci/telegram.sh failure "${{ inputs.device }}" "${{ inputs.kernelsu_next }}"
+        run: ci/telegram.sh failure "${{ inputs.device }}"
 
       - name: Mark workflow failed if kernel build failed
         if: env.SUCCESS == '0'
