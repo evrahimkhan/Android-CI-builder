@@ -25,6 +25,39 @@ on:
         default: ""
         type: string
 
+      enable_custom_config:
+        description: Enable custom Kconfig branding (localversion/hostname/uname/cc text)
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+      config_localversion:
+        description: CONFIG_LOCALVERSION
+        required: false
+        default: "-CI"
+        type: string
+
+      config_default_hostname:
+        description: CONFIG_DEFAULT_HOSTNAME
+        required: false
+        default: "CI Builder"
+        type: string
+
+      config_uname_override_string:
+        description: CONFIG_UNAME_OVERRIDE_STRING
+        required: false
+        default: ""
+        type: string
+
+      config_cc_version_text:
+        description: Optional override for CONFIG_CC_VERSION_TEXT (leave blank to auto)
+        required: false
+        default: ""
+        type: string
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -95,10 +128,26 @@ jobs:
       - name: Telegram Build Start
         if: ${{ env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
-        run: ci/telegram.sh start "${{ inputs.device }}" "${{ inputs.kernel_branch }}" "${{ inputs.defconfig }}" "${{ inputs.base_boot_img_url }}"
+        run: >
+          ci/telegram.sh start
+          "${{ inputs.device }}"
+          "${{ inputs.kernel_branch }}"
+          "${{ inputs.defconfig }}"
+          "${{ inputs.base_boot_img_url }}"
+          "${{ inputs.enable_custom_config }}"
+          "${{ inputs.config_localversion }}"
+          "${{ inputs.config_default_hostname }}"
+          "${{ inputs.config_uname_override_string }}"
+          "${{ inputs.config_cc_version_text }}"
 
       - name: Build Kernel
         shell: bash
+        env:
+          CUSTOM_CONFIG_ENABLED: ${{ inputs.enable_custom_config }}
+          CFG_LOCALVERSION: ${{ inputs.config_localversion }}
+          CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
+          CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
+          CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
         run: ci/build_kernel.sh "${{ inputs.defconfig }}"
 
       - name: Detect GKI
@@ -113,6 +162,12 @@ jobs:
       - name: Package AnyKernel and boot.img
         if: env.SUCCESS == '1'
         shell: bash
+        env:
+          CUSTOM_CONFIG_ENABLED: ${{ inputs.enable_custom_config }}
+          CFG_LOCALVERSION: ${{ inputs.config_localversion }}
+          CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
+          CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
+          CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
         run: ci/package_anykernel.sh "${{ inputs.device }}" "${{ inputs.base_boot_img_url }}"
 
       - name: Upload artifacts
