@@ -23,13 +23,30 @@ if [ -z "$KIMG" ]; then
   exit 1
 fi
 
-KSTR="Custom Kernel ${DEVICE} ${KERNEL_VERSION:-unknown}"
+# Stamp kernel.string and device (your anykernel.sh must have these keys)
+KSTR="✨ ${DEVICE} • Linux ${KERNEL_VERSION:-unknown} • CI ${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
 KSTR_ESC="${KSTR//&/\\&}"
-sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/anykernel.sh
+sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/anykernel.sh || true
 sed -i "s|^[[:space:]]*device.name1=.*|device.name1=${DEVICE}|" anykernel/anykernel.sh || true
+
+# Add modern build info file inside zip
+cat > anykernel/build-info.txt <<EOF
+Device: ${DEVICE}
+Kernel version: ${KERNEL_VERSION:-unknown}
+Kernel type: ${KERNEL_TYPE:-unknown}
+Clang: ${CLANG_VERSION:-unknown}
+CI run: ${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}
+Git SHA: ${GITHUB_SHA}
+Image file: ${KIMG}
+EOF
 
 ZIP_NAME="Kernel-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.zip"
 (cd anykernel && zip -r9 "../${ZIP_NAME}" . -x "*.git*" )
+
+# Add zip comment (modern UX)
+printf "Built for %s | Linux %s | CI %s/%s\n" \
+  "${DEVICE}" "${KERNEL_VERSION:-unknown}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \
+  | zip -z "../${ZIP_NAME}" >/dev/null || true
 
 echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
 echo "KERNEL_IMAGE_FILE=${KIMG}" >> "$GITHUB_ENV"
