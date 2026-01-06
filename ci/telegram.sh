@@ -28,14 +28,11 @@ send_doc() {
       -F document=@"$path" \
       "${api}/sendDocument" >/dev/null
   else
-    curl -sS -F chat_id="${TG_CHAT_ID}" \
-      -F document=@"$path" \
-      "${api}/sendDocument" >/dev/null
+    curl -sS -F chat_id="${TG_CHAT_ID}" -F document=@"$path" "${api}/sendDocument" >/dev/null
   fi
 }
 
 human_size() {
-  # bytes -> human-ish (KiB/MiB)
   local b="$1"
   if [ "$b" -lt 1024 ]; then echo "${b} B"; return; fi
   local kib=$((b / 1024))
@@ -45,17 +42,16 @@ human_size() {
 }
 
 if [ "$MODE" = "start" ]; then
-  local_base="(none)"
-  [ -n "$BASE_BOOT_URL" ] && local_base="provided"
-
+  base="(none)"
+  [ -n "$BASE_BOOT_URL" ] && base="provided"
   send_msg "<b>🚀 Kernel Build Started</b>
 ━━━━━━━━━━━━━━━━━━━━
 📱 <b>Device</b>: <code>${DEVICE}</code>
 🌿 <b>Branch</b>: <code>${BRANCH}</code>
 ⚙️ <b>Defconfig</b>: <code>${DEFCONFIG}</code>
-🧩 <b>Base boot.img</b>: <code>${local_base}</code>
+🧩 <b>Base boot.img</b>: <code>${base}</code>
 
-⏳ Building with CI toolchain + cache…"
+⏳ Compiling…"
   exit 0
 fi
 
@@ -66,12 +62,8 @@ if [ "$MODE" = "success" ]; then
 
   zipsz=""
   bootsz=""
-  if [ -n "$ZIP" ] && [ -f "$ZIP" ]; then
-    zipsz="$(human_size "$(stat -c%s "$ZIP")")"
-  fi
-  if [ -n "$BOOT" ] && [ -f "$BOOT" ]; then
-    bootsz="$(human_size "$(stat -c%s "$BOOT")")"
-  fi
+  [ -n "$ZIP" ] && [ -f "$ZIP" ] && zipsz="$(human_size "$(stat -c%s "$ZIP")")"
+  [ -n "$BOOT" ] && [ -f "$BOOT" ] && bootsz="$(human_size "$(stat -c%s "$BOOT")")"
 
   send_msg "<b>✅ Build Succeeded</b>
 ━━━━━━━━━━━━━━━━━━━━
@@ -80,16 +72,16 @@ if [ "$MODE" = "success" ]; then
 🐧 <b>Linux</b>: <code>${KERNEL_VERSION:-unknown}</code>
 🛠 <b>Clang</b>: <code>${CLANG_VERSION:-unknown}</code>
 ⏱ <b>Time</b>: <code>${BUILD_TIME:-0}s</code>
-📦 <b>Artifacts</b>:
- • AnyKernel ZIP: <code>${ZIP:-n/a}</code> ${zipsz:+(<code>$zipsz</code>)}
- • boot.img: <code>${BOOT:-n/a}</code> ${bootsz:+(<code>$bootsz</code>)}
+
+📦 <b>Artifacts</b>
+• ZIP: <code>${ZIP:-n/a}</code> ${zipsz:+(<code>$zipsz</code>)}
+• boot.img: <code>${BOOT:-n/a}</code> ${bootsz:+(<code>$bootsz</code>)}
 
 📤 Uploading files…"
 
   [ -n "$ZIP" ] && send_doc "$ZIP" "📦 <b>AnyKernel ZIP</b> • <code>${DEVICE}</code>"
   [ -n "$BOOT" ] && send_doc "$BOOT" "🧩 <b>boot.img</b> • <code>${DEVICE}</code>"
   send_doc "$LOG" "🧾 <b>build.log</b>"
-
   exit 0
 fi
 
