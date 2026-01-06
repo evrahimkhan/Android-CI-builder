@@ -7,47 +7,33 @@ BRANCH="${3:-}"
 DEFCONFIG="${4:-}"
 BASE_BOOT_URL="${5:-}"
 
-# Always operate from workspace root so relative paths (Kernel-*.zip, boot-*.img) resolve
-cd "${GITHUB_WORKSPACE:-$(pwd)}"
+CUSTOM_ENABLED="${6:-false}"
+CFG_LOCALVERSION="${7:--CI}"
+CFG_DEFAULT_HOSTNAME="${8:-CI Builder}"
+CFG_UNAME_OVERRIDE_STRING="${9:-}"
+CFG_CC_VERSION_TEXT="${10:-}"
 
+cd "${GITHUB_WORKSPACE:-$(pwd)}"
 api="https://api.telegram.org/bot${TG_TOKEN}"
 
 send_msg() {
   local text="$1"
   curl -sS -f -X POST "${api}/sendMessage" \
     -d chat_id="${TG_CHAT_ID}" \
-    --data-urlencode text="$text" \
-    -d parse_mode="HTML" >/dev/null
+    -d parse_mode="HTML" \
+    --data-urlencode text="$text" >/dev/null
 }
 
-# Sends a document and shows Telegram error response if it fails
-send_doc_raw() {
+send_doc() {
   local path="$1"
   local caption="${2:-}"
-
-  local resp
-  if [ -n "$caption" ]; then
-    resp="$(curl -sS -f \
-      -F chat_id="${TG_CHAT_ID}" \
-      --form-string parse_mode="HTML" \
-      --form-string caption="$caption" \
-      -F document=@"$path" \
-      "${api}/sendDocument" 2>&1)" || {
-        echo "Telegram sendDocument failed for $path" >&2
-        echo "$resp" >&2
-        return 1
-      }
-  else
-    resp="$(curl -sS -f \
-      -F chat_id="${TG_CHAT_ID}" \
-      -F document=@"$path" \
-      "${api}/sendDocument" 2>&1)" || {
-        echo "Telegram sendDocument failed for $path" >&2
-        echo "$resp" >&2
-        return 1
-      }
-  fi
-  return 0
+  [ -f "$path" ] || return 0
+  curl -sS -f \
+    -F chat_id="${TG_CHAT_ID}" \
+    --form-string parse_mode="HTML" \
+    --form-string caption="$caption" \
+    -F document=@"$path" \
+    "${api}/sendDocument" >/dev/null
 }
 
 human_size() {
@@ -59,65 +45,26 @@ human_size() {
   echo "${mib} MiB"
 }
 
-# Telegram bots can fail on large files. Split large files and upload parts.
-send_doc_auto() {
-  local path="$1"
-  local caption="${2:-}"
-
-  if [ ! -f "$path" ]; then
-    echo "File not found: $path" >&2
-    return 1
-  fi
-
-  local size
-  size="$(stat -c%s "$path")"
-  local hsz
-  hsz="$(human_size "$size")"
-
-  # 45 MiB chunk size to stay under typical bot limits
-  local max=$((45 * 1024 * 1024))
-
-  if [ "$size" -le "$max" ]; then
-    send_doc_raw "$path" "${caption} <code>(${hsz})</code>"
-    return $?
-  fi
-
-  # Split and upload parts
-  local base
-  base="$(basename "$path")"
-  local dir
-  dir="$(dirname "$path")"
-  local prefix="${dir}/${base}.part-"
-
-  rm -f "${prefix}"* 2>/dev/null || true
-  split -b "${max}" -d -a 2 "$path" "${prefix}"
-
-  send_msg "<b>📦 Large file detected</b>
-<code>${base}</code> is <code>${hsz}</code>.
-Uploading in parts…"
-
-  local part
-  for part in "${prefix}"*; do
-    local pbase
-    pbase="$(basename "$part")"
-    send_doc_raw "$part" "${caption} <b>(part)</b> <code>${pbase}</code>"
-  done
-
-  send_msg "✅ Uploaded parts for <code>${base}</code>
-To restore on PC:
-<code>cat ${base}.part-* &gt; ${base}</code>"
-  return 0
-}
-
 if [ "$MODE" = "start" ]; then
-  local base="(none)"
+  base="(none)"
   [ -n "$BASE_BOOT_URL" ] && base="provided"
+
+  cfg_line="🎛 <b>Custom config</b>: <code>disabled</code>"
+  if [ "$CUSTOM_ENABLED" = "true" ]; then
+    cfg_line="🎛 <b>Custom config</b>: <code>enabled</code>
+• LOCALVERSION: <code>${CFG_LOCALVERSION}</code>
+• HOSTNAME: <code>${CFG_DEFAULT_HOSTNAME}</code>
+• UNAME: <code>${CFG_UNAME_OVERRIDE_STRING}</code>
+• CC_VERSION_TEXT: <code>${CFG_CC_VERSION_TEXT:-auto}</code>"
+  fi
+
   send_msg "<b>🚀 Kernel Build Started</b>
 ━━━━━━━━━━━━━━━━━━━━
 📱 <b>Device</b>: <code>${DEVICE}</code>
 🌿 <b>Branch</b>: <code>${BRANCH}</code>
 ⚙️ <b>Defconfig</b>: <code>${DEFCONFIG}</code>
 🧩 <b>Base boot.img</b>: <code>${base}</code>
+${cfg_line}
 
 ⏳ Compiling…"
   exit 0
@@ -128,11 +75,10 @@ if [ "$MODE" = "success" ]; then
   BOOT="${BOOT_IMG_NAME:-}"
   LOG="kernel/build.log"
 
-  # Debug info to stderr (shows in Actions logs)
-  echo "Telegram success:"
-  echo "  ZIP_NAME=$ZIP"
-  echo "  BOOT_IMG_NAME=$BOOT"
-  ls -la . || true
+  zipsz=""
+  bootsz=""
+  [ -n "$ZIP" ] && [ -f "$ZIP" ] && zipsz="$(human_size "$(stat -c%s "$ZIP")")"
+  [ -n "$BOOT" ] && [ -f "$BOOT" ] && bootsz="$(human_size "$(stat -c%s "$BOOT")")"
 
   send_msg "<b>✅ Build Succeeded</b>
 ━━━━━━━━━━━━━━━━━━━━
@@ -142,21 +88,13 @@ if [ "$MODE" = "success" ]; then
 🛠 <b>Clang</b>: <code>${CLANG_VERSION:-unknown}</code>
 ⏱ <b>Time</b>: <code>${BUILD_TIME:-0}s</code>
 
-📦 Uploading artifacts…"
+📦 <b>Artifacts</b>
+• ZIP: <code>${ZIP:-n/a}</code> ${zipsz:+(<code>$zipsz</code>)}
+• boot.img: <code>${BOOT:-n/a}</code> ${bootsz:+(<code>$bootsz</code>)}"
 
-  if [ -n "$ZIP" ]; then
-    send_doc_auto "$ZIP" "📦 <b>AnyKernel ZIP</b> • <code>${DEVICE}</code>" || true
-  else
-    send_msg "⚠️ ZIP_NAME is empty; skipping ZIP upload."
-  fi
-
-  if [ -n "$BOOT" ]; then
-    send_doc_auto "$BOOT" "🧩 <b>boot.img</b> • <code>${DEVICE}</code>" || true
-  else
-    send_msg "⚠️ BOOT_IMG_NAME is empty; skipping boot.img upload."
-  fi
-
-  send_doc_auto "$LOG" "🧾 <b>build.log</b>" || true
+  [ -n "$ZIP" ] && send_doc "$ZIP" "📦 <b>AnyKernel ZIP</b> • <code>${DEVICE}</code>"
+  [ -n "$BOOT" ] && send_doc "$BOOT" "🧩 <b>boot.img</b> • <code>${DEVICE}</code>"
+  send_doc "$LOG" "🧾 <b>build.log</b>"
   exit 0
 fi
 
@@ -170,8 +108,7 @@ if [ "$MODE" = "failure" ]; then
 📱 <b>Device</b>: <code>${DEVICE}</code>
 
 📎 Sending error log…"
-
-  send_doc_auto "$ERR" "🧯 <b>error.log</b> • <code>${DEVICE}</code>" || true
+  send_doc "$ERR" "🧯 <b>error.log</b> • <code>${DEVICE}</code>"
   exit 0
 fi
 
