@@ -6,12 +6,14 @@ DEVICE="${2:-unknown}"
 BRANCH="${3:-}"
 DEFCONFIG="${4:-}"
 BASE_BOOT_URL="${5:-}"
+BASE_VENDOR_BOOT_URL="${6:-}"
+BASE_INIT_BOOT_URL="${7:-}"
 
-CUSTOM_ENABLED="${6:-false}"
-CFG_LOCALVERSION="${7:--CI}"
-CFG_DEFAULT_HOSTNAME="${8:-CI Builder}"
-CFG_UNAME_OVERRIDE_STRING="${9:-}"
-CFG_CC_VERSION_TEXT="${10:-}"
+CUSTOM_ENABLED="${8:-false}"
+CFG_LOCALVERSION="${9:--CI}"
+CFG_DEFAULT_HOSTNAME="${10:-CI Builder}"
+CFG_UNAME_OVERRIDE_STRING="${11:-}"
+CFG_CC_VERSION_TEXT="${12:-}"
 
 cd "${GITHUB_WORKSPACE:-$(pwd)}"
 api="https://api.telegram.org/bot${TG_TOKEN}"
@@ -54,11 +56,11 @@ send_doc_auto() {
   local path="$1"
   local caption="$2"
 
-  [ -f "$path" ] || { echo "File not found: $path" >&2; return 1; }
+  [ -f "$path" ] || return 0
 
   local size max
   size="$(stat -c%s "$path")"
-  max=$((45 * 1024 * 1024)) # safe chunk size
+  max=$((45 * 1024 * 1024))
 
   local hsz
   hsz="$(human_size "$size")"
@@ -90,15 +92,12 @@ Restore:
 <code>cat ${base}.part-* &gt; ${base}</code>"
 }
 
-# Find artifacts if env vars missing
-pick_latest() {
-  local pattern="$1"
-  ls -1t $pattern 2>/dev/null | head -n1 || true
-}
+pick_latest() { ls -1t $1 2>/dev/null | head -n1 || true; }
 
 if [ "$MODE" = "start" ]; then
-  base="(none)"
-  [ -n "$BASE_BOOT_URL" ] && base="provided"
+  base_boot="(none)"; [ -n "$BASE_BOOT_URL" ] && base_boot="provided"
+  base_vboot="(none)"; [ -n "$BASE_VENDOR_BOOT_URL" ] && base_vboot="provided"
+  base_iboot="(none)"; [ -n "$BASE_INIT_BOOT_URL" ] && base_iboot="provided"
 
   cfg_line="🎛 <b>Branding</b>: <code>disabled</code>"
   if [ "$CUSTOM_ENABLED" = "true" ]; then
@@ -114,7 +113,12 @@ if [ "$MODE" = "start" ]; then
 📱 <b>Device</b>: <code>${DEVICE}</code>
 🌿 <b>Branch</b>: <code>${BRANCH}</code>
 ⚙️ <b>Defconfig</b>: <code>${DEFCONFIG}</code>
-🧩 <b>Base boot.img</b>: <code>${base}</code>
+
+🧩 <b>Base images</b>
+• boot: <code>${base_boot}</code>
+• vendor_boot: <code>${base_vboot}</code>
+• init_boot: <code>${base_iboot}</code>
+
 ${cfg_line}
 
 ⏳ Compiling…"
@@ -122,13 +126,12 @@ ${cfg_line}
 fi
 
 if [ "$MODE" = "success" ]; then
-  ZIP="${ZIP_NAME:-}"
-  BOOT="${BOOT_IMG_NAME:-}"
+  ZIP="${ZIP_NAME:-}"; [ -z "$ZIP" ] && ZIP="$(pick_latest 'Kernel-*.zip')"
+  BOOT="${BOOT_IMG_NAME:-}"; [ -z "$BOOT" ] && BOOT="$(pick_latest 'boot-*.img')"
+  VBOOT="${VENDOR_BOOT_IMG_NAME:-}"; [ -z "$VBOOT" ] && VBOOT="$(pick_latest 'vendor_boot-*.img')"
+  IBOOT="${INIT_BOOT_IMG_NAME:-}"; [ -z "$IBOOT" ] && IBOOT="$(pick_latest 'init_boot-*.img')"
   BOOTMODE="${BOOT_IMG_MODE:-unknown}"
   LOG="kernel/build.log"
-
-  [ -z "$ZIP" ] && ZIP="$(pick_latest 'Kernel-*.zip')"
-  [ -z "$BOOT" ] && BOOT="$(pick_latest 'boot-*.img')"
 
   send_msg "<b>✅ Build Succeeded</b>
 ━━━━━━━━━━━━━━━━━━━━
@@ -137,12 +140,14 @@ if [ "$MODE" = "success" ]; then
 🐧 <b>Linux</b>: <code>${KERNEL_VERSION:-unknown}</code>
 🛠 <b>Clang</b>: <code>${CLANG_VERSION:-unknown}</code>
 ⏱ <b>Time</b>: <code>${BUILD_TIME:-0}s</code>
-🧩 <b>boot.img mode</b>: <code>${BOOTMODE}</code>
 
+🧩 <b>boot.img mode</b>: <code>${BOOTMODE}</code>
 📦 Uploading artifacts…"
 
   [ -n "$ZIP" ] && send_doc_auto "$ZIP" "📦 <b>AnyKernel ZIP</b> • <code>${DEVICE}</code>" || true
   [ -n "$BOOT" ] && send_doc_auto "$BOOT" "🧩 <b>boot.img</b> • <code>${DEVICE}</code>" || true
+  [ -n "$VBOOT" ] && send_doc_auto "$VBOOT" "🧩 <b>vendor_boot.img</b> • <code>${DEVICE}</code>" || true
+  [ -n "$IBOOT" ] && send_doc_auto "$IBOOT" "🧩 <b>init_boot.img</b> • <code>${DEVICE}</code>" || true
   send_doc_auto "$LOG" "🧾 <b>build.log</b>" || true
   exit 0
 fi
