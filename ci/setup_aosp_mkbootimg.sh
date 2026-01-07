@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Clone AOSP mkbootimg (shallow)
 if [ ! -d aosp-mkbootimg/.git ]; then
   git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg aosp-mkbootimg
 fi
 
-# Find entrypoints (repo layout can vary)
 MKBOOTIMG="$(find aosp-mkbootimg -maxdepth 4 -type f \( -name 'mkbootimg.py' -o -name 'mkbootimg' \) | head -n1 || true)"
 UNPACKBOOTIMG="$(find aosp-mkbootimg -maxdepth 4 -type f \( -name 'unpack_bootimg.py' -o -name 'unpack_bootimg' \) | head -n1 || true)"
 
@@ -35,6 +33,3 @@ EOF
 fi
 
 echo "${GITHUB_WORKSPACE}/tools/mkbootimg-bin" >> "$GITHUB_PATH"
-
-mkbootimg --help >/dev/null 2>&1 || true
-unpack_bootimg --help >/dev/null 2>&1 || true
