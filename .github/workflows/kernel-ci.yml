@@ -25,15 +25,13 @@ on:
         required: false
         default: ""
         type: string
-
       base_vendor_boot_img_url:
-        description: Optional base vendor_boot.img URL (download & upload as matching set)
+        description: Optional base vendor_boot.img URL (download & upload)
         required: false
         default: ""
         type: string
-
       base_init_boot_img_url:
-        description: Optional base init_boot.img URL (download & upload as matching set)
+        description: Optional base init_boot.img URL (download & upload)
         required: false
         default: ""
         type: string
@@ -44,7 +42,6 @@ on:
         default: "false"
         type: choice
         options: ["false", "true"]
-
       config_localversion:
         description: CONFIG_LOCALVERSION
         required: false
@@ -61,7 +58,7 @@ on:
         default: ""
         type: string
       config_cc_version_text:
-        description: Optional override for CONFIG_CC_VERSION_TEXT (blank = auto from clang --version)
+        description: Optional override for CONFIG_CC_VERSION_TEXT (blank = auto)
         required: false
         default: ""
         type: string
@@ -169,7 +166,7 @@ jobs:
         shell: bash
         run: ci/ensure_anykernel_core.sh
 
-      - name: Package AnyKernel and images
+      - name: Package AnyKernel ZIP
         if: env.SUCCESS == '1'
         shell: bash
         env:
@@ -180,6 +177,16 @@ jobs:
           CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
         run: >
           ci/package_anykernel.sh
+          "${{ inputs.device }}"
+          "${{ inputs.base_boot_img_url }}"
+          "${{ inputs.base_vendor_boot_img_url }}"
+          "${{ inputs.base_init_boot_img_url }}"
+
+      - name: Repack boot.img and fetch vendor/init boot
+        if: env.SUCCESS == '1'
+        shell: bash
+        run: >
+          ci/repack_images.sh
           "${{ inputs.device }}"
           "${{ inputs.base_boot_img_url }}"
           "${{ inputs.base_vendor_boot_img_url }}"
