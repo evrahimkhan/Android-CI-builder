@@ -3,7 +3,6 @@
 # AnyKernel3 Installer (Universal Modern UI)
 #
 
-# ---------- Pre-core boot detection ----------
 SLOT_SUFFIX="$(getprop ro.boot.slot_suffix 2>/dev/null)"
 
 detect_byname() {
@@ -43,7 +42,6 @@ fi
 [ -n "$AK3_BLOCK" ] && block="$AK3_BLOCK"
 [ -n "$AK3_IS_SLOT_DEVICE" ] && is_slot_device="$AK3_IS_SLOT_DEVICE"
 
-# ---------- AnyKernel properties ----------
 properties() {
 cat <<'EOF'
 kernel.string=Custom Kernel
@@ -58,10 +56,8 @@ EOF
 [ -n "${AK3_IS_SLOT_DEVICE:-}" ] && printf 'is_slot_device=%s\n' "$AK3_IS_SLOT_DEVICE"
 }
 
-# ---------- Load AnyKernel core ----------
 . tools/ak3-core.sh
 
-# ---------- UI ----------
 _has() { command -v "$1" >/dev/null 2>&1; }
 ui() { if _has ui_print; then ui_print "$1"; else echo "$1"; fi; }
 bar() { ui "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; }
@@ -74,35 +70,35 @@ MODEL="$(getprop ro.product.model 2>/dev/null)"
 CODENAME="$(getprop ro.product.device 2>/dev/null)"
 ANDROID="$(getprop ro.build.version.release 2>/dev/null)"
 
-h1 "✨ Kernel Installer"
-ui "📌 Kernel: $KERNEL_LABEL"
-[ -n "$MODEL" ] && ui "📱 Device: $MODEL"
-[ -n "$CODENAME" ] && ui "🏷 Codename: $CODENAME"
-[ -n "$ANDROID" ] && ui "🤖 Android: $ANDROID"
-[ -n "$SLOT_SUFFIX" ] && ui "🧩 Slot: $SLOT_SUFFIX" || ui "🧩 Slot: N/A"
-[ -n "${block:-}" ] && ui "🧱 Boot block: $block"
+h1 " Kernel Installer"
+ui " Kernel: $KERNEL_LABEL"
+[ -n "$MODEL" ] && ui " Device: $MODEL"
+[ -n "$CODENAME" ] && ui " Codename: $CODENAME"
+[ -n "$ANDROID" ] && ui " Android: $ANDROID"
+[ -n "$SLOT_SUFFIX" ] && ui " Slot: $SLOT_SUFFIX" || ui " Slot: N/A"
+[ -n "${block:-}" ] && ui " Boot block: $block"
 
 KERNEL_IMAGE=""
 for f in Image.gz-dtb Image-dtb Image.gz Image.lz4 Image zImage; do
   [ -f "$f" ] && KERNEL_IMAGE="$f" && break
 done
-[ -z "$KERNEL_IMAGE" ] && abort "❌ No kernel image found in zip!"
+[ -z "$KERNEL_IMAGE" ] && abort " No kernel image found in zip!"
 
-ui "📦 Kernel image: $KERNEL_IMAGE"
+ui " Kernel image: $KERNEL_IMAGE"
 
-h1 "⚙️ Patching boot.img"
-ui "🔍 Dumping boot…"
+h1 " Patching boot.img"
+ui " Dumping boot…"
 dump_boot
-ui "🧩 Unpacking…"
+ui " Unpacking…"
 unpack_boot
-ui "🧠 Replacing kernel…"
+ui " Replacing kernel…"
 replace_kernel "$KERNEL_IMAGE"
-ui "🧱 Repacking…"
+ui " Repacking…"
 repack_boot
-ui "🚀 Flashing…"
+ui " Flashing…"
 flash_boot
 
-h1 "✅ Done"
-ui "🎉 Flash completed successfully."
-ui "🔁 Reboot system."
+h1 " Done"
+ui " Flash completed successfully."
+ui " Reboot system."
 ui " "
