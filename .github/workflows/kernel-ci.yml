@@ -21,7 +21,19 @@ on:
         type: string
 
       base_boot_img_url:
-        description: REQUIRED for flash-safe boot.img repack on most devices (URL to ROM boot.img)
+        description: Base boot.img URL (recommended; used to repack boot.img safely)
+        required: false
+        default: ""
+        type: string
+
+      base_vendor_boot_img_url:
+        description: Optional base vendor_boot.img URL (download & upload as matching set)
+        required: false
+        default: ""
+        type: string
+
+      base_init_boot_img_url:
+        description: Optional base init_boot.img URL (download & upload as matching set)
         required: false
         default: ""
         type: string
@@ -38,19 +50,16 @@ on:
         required: false
         default: "-CI"
         type: string
-
       config_default_hostname:
         description: CONFIG_DEFAULT_HOSTNAME
         required: false
         default: "CI Builder"
         type: string
-
       config_uname_override_string:
         description: CONFIG_UNAME_OVERRIDE_STRING
         required: false
         default: ""
         type: string
-
       config_cc_version_text:
         description: Optional override for CONFIG_CC_VERSION_TEXT (blank = auto from clang --version)
         required: false
@@ -133,6 +142,8 @@ jobs:
           "${{ inputs.kernel_branch }}"
           "${{ inputs.defconfig }}"
           "${{ inputs.base_boot_img_url }}"
+          "${{ inputs.base_vendor_boot_img_url }}"
+          "${{ inputs.base_init_boot_img_url }}"
           "${{ inputs.enable_custom_config }}"
           "${{ inputs.config_localversion }}"
           "${{ inputs.config_default_hostname }}"
@@ -158,7 +169,7 @@ jobs:
         shell: bash
         run: ci/ensure_anykernel_core.sh
 
-      - name: Package AnyKernel and boot.img
+      - name: Package AnyKernel and images
         if: env.SUCCESS == '1'
         shell: bash
         env:
@@ -167,7 +178,12 @@ jobs:
           CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
           CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
           CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
-        run: ci/package_anykernel.sh "${{ inputs.device }}" "${{ inputs.base_boot_img_url }}"
+        run: >
+          ci/package_anykernel.sh
+          "${{ inputs.device }}"
+          "${{ inputs.base_boot_img_url }}"
+          "${{ inputs.base_vendor_boot_img_url }}"
+          "${{ inputs.base_init_boot_img_url }}"
 
       - name: Upload artifacts
         if: always()
@@ -177,6 +193,8 @@ jobs:
           path: |
             Kernel-*.zip
             boot-*.img
+            vendor_boot-*.img
+            init_boot-*.img
             kernel/build.log
             kernel/error.log
           if-no-files-found: warn
@@ -187,9 +205,12 @@ jobs:
         with:
           tag_name: build-${{ github.run_id }}-${{ github.run_attempt }}
           name: Kernel-${{ inputs.device }} (run ${{ github.run_id }}/${{ github.run_attempt }})
+          fail_on_unmatched_files: false
           files: |
-            ${{ env.ZIP_NAME }}
-            ${{ env.BOOT_IMG_NAME }}
+            Kernel-*.zip
+            boot-*.img
+            vendor_boot-*.img
+            init_boot-*.img
             kernel/build.log
 
       - name: Telegram Success
