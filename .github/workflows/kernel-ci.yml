@@ -19,20 +19,19 @@ on:
         description: Kernel defconfig (e.g. vendor/moonstone_defconfig)
         required: true
         type: string
+
       base_boot_img_url:
-        description: Optional URL to a base boot.img for repacking boot.img
+        description: REQUIRED for flash-safe boot.img repack on most devices (URL to ROM boot.img)
         required: false
         default: ""
         type: string
 
       enable_custom_config:
-        description: Enable custom Kconfig branding (localversion/hostname/uname/cc text)
+        description: Enable custom Kconfig branding
         required: true
         default: "false"
         type: choice
-        options:
-          - "false"
-          - "true"
+        options: ["false", "true"]
 
       config_localversion:
         description: CONFIG_LOCALVERSION
@@ -53,7 +52,7 @@ on:
         type: string
 
       config_cc_version_text:
-        description: Optional override for CONFIG_CC_VERSION_TEXT (leave blank to auto)
+        description: Optional override for CONFIG_CC_VERSION_TEXT (blank = auto from clang --version)
         required: false
         default: ""
         type: string
