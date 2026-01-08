@@ -17,7 +17,7 @@ if mkbootimg --help 2>/dev/null | grep -qE '(^|[[:space:]])-o[[:space:]]+OUTPUT\
   OUTFLAG="-o"
 fi
 
-# Pick kernel image same order as AnyKernel
+# Pick kernel image
 KIMG=""
 for f in Image.gz-dtb Image-dtb Image.gz Image.lz4 Image zImage; do
   [ -f "${BOOTDIR}/${f}" ] && KIMG="$f" && break
@@ -27,8 +27,10 @@ done
 KIMG_PATH="${BOOTDIR}/${KIMG}"
 EMPTY_RD="$(mktemp)"; : > "$EMPTY_RD"
 
-OUT_BOOT="boot-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.img"
-echo "BOOT_IMG_NAME=${OUT_BOOT}" >> "$GITHUB_ENV"
+OUT_BOOT_RAW="boot-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.img"
+OUT_BOOT_XZ="${OUT_BOOT_RAW}.xz"
+echo "BOOT_IMG_NAME=${OUT_BOOT_RAW}" >> "$GITHUB_ENV"
+echo "BOOT_IMG_XZ_NAME=${OUT_BOOT_XZ}" >> "$GITHUB_ENV"
 
 BOOT_MODE="minimal"
 
@@ -72,40 +74,50 @@ if [ -n "$BASE_BOOT_URL" ] && command -v unpack_bootimg >/dev/null 2>&1; then
     ARGS+=( --bootconfig "$BOOTCONFIG" )
   fi
 
-  ARGS+=( "$OUTFLAG" "$OUT_BOOT" )
+  ARGS+=( "$OUTFLAG" "$OUT_BOOT_RAW" )
 
   set +e
   mkbootimg "${ARGS[@]}"
   RC=$?
   set -e
 
-  if [ "$RC" -eq 0 ] && [ -s "$OUT_BOOT" ]; then
+  if [ "$RC" -eq 0 ] && [ -s "$OUT_BOOT_RAW" ]; then
     BOOT_MODE="repacked"
-  else
-    echo "Base repack failed; creating minimal boot.img (often not bootable)" >&2
   fi
 fi
 
 if [ "$BOOT_MODE" != "repacked" ]; then
-  mkbootimg --kernel "$KIMG_PATH" --ramdisk "$EMPTY_RD" --cmdline "" --header_version 0 "$OUTFLAG" "$OUT_BOOT"
+  mkbootimg --kernel "$KIMG_PATH" --ramdisk "$EMPTY_RD" --cmdline "" --header_version 0 "$OUTFLAG" "$OUT_BOOT_RAW"
   BOOT_MODE="minimal"
 fi
 
 echo "BOOT_IMG_MODE=${BOOT_MODE}" >> "$GITHUB_ENV"
 
-# vendor_boot/init_boot download as matching set (optional)
+# Compress boot.img (upload only compressed)
+xz -T0 -9 -f "$OUT_BOOT_RAW"
+[ -f "$OUT_BOOT_XZ" ] || { echo "boot.img.xz not created"; exit 1; }
+
+# vendor_boot/init_boot downloads + compress (upload only compressed)
 if [ -n "$BASE_VENDOR_BOOT_URL" ]; then
-  VBOOT="vendor_boot-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.img"
-  echo "VENDOR_BOOT_IMG_NAME=${VBOOT}" >> "$GITHUB_ENV"
-  curl -L --fail -o "$VBOOT" "$BASE_VENDOR_BOOT_URL"
+  VBOOT_RAW="vendor_boot-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.img"
+  VBOOT_XZ="${VBOOT_RAW}.xz"
+  echo "VENDOR_BOOT_IMG_NAME=${VBOOT_RAW}" >> "$GITHUB_ENV"
+  echo "VENDOR_BOOT_IMG_XZ_NAME=${VBOOT_XZ}" >> "$GITHUB_ENV"
+  curl -L --fail -o "$VBOOT_RAW" "$BASE_VENDOR_BOOT_URL"
+  xz -T0 -9 -f "$VBOOT_RAW"
 else
   echo "VENDOR_BOOT_IMG_NAME=" >> "$GITHUB_ENV"
+  echo "VENDOR_BOOT_IMG_XZ_NAME=" >> "$GITHUB_ENV"
 fi
 
 if [ -n "$BASE_INIT_BOOT_URL" ]; then
-  IBOOT="init_boot-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.img"
-  echo "INIT_BOOT_IMG_NAME=${IBOOT}" >> "$GITHUB_ENV"
-  curl -L --fail -o "$IBOOT" "$BASE_INIT_BOOT_URL"
+  IBOOT_RAW="init_boot-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.img"
+  IBOOT_XZ="${IBOOT_RAW}.xz"
+  echo "INIT_BOOT_IMG_NAME=${IBOOT_RAW}" >> "$GITHUB_ENV"
+  echo "INIT_BOOT_IMG_XZ_NAME=${IBOOT_XZ}" >> "$GITHUB_ENV"
+  curl -L --fail -o "$IBOOT_RAW" "$BASE_INIT_BOOT_URL"
+  xz -T0 -9 -f "$IBOOT_RAW"
 else
   echo "INIT_BOOT_IMG_NAME=" >> "$GITHUB_ENV"
+  echo "INIT_BOOT_IMG_XZ_NAME=" >> "$GITHUB_ENV"
 fi
