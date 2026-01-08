@@ -3,29 +3,23 @@ set -euo pipefail
 
 MODE="${1:?mode required}"
 DEVICE="${2:-unknown}"
-
-# START args from workflow
 BRANCH="${3:-}"
 DEFCONFIG="${4:-}"
 BASE_BOOT_URL="${5:-}"
 BASE_VENDOR_BOOT_URL="${6:-}"
 BASE_INIT_BOOT_URL="${7:-}"
 
-# Branding args (optional)
 CUSTOM_ENABLED="${8:-false}"
 CFG_LOCALVERSION="${9:--CI}"
 CFG_DEFAULT_HOSTNAME="${10:-CI Builder}"
 CFG_UNAME_OVERRIDE_STRING="${11:-}"
 CFG_CC_VERSION_TEXT="${12:-}"
 
-# Always operate from workspace root so relative paths resolve
 cd "${GITHUB_WORKSPACE:-$(pwd)}"
-
 api="https://api.telegram.org/bot${TG_TOKEN}"
 
 log_err() { echo "[telegram] $*" >&2; }
 
-# ---------- helpers ----------
 human_size() {
   local b="$1"
   if [ "$b" -lt 1024 ]; then echo "${b} B"; return; fi
@@ -35,64 +29,39 @@ human_size() {
   echo "${mib} MiB"
 }
 
-pick_latest() {
-  # usage: pick_latest 'pattern'
-  ls -1t $1 2>/dev/null | head -n1 || true
-}
+pick_latest() { ls -1t $1 2>/dev/null | head -n1 || true; }
 
 safe_send_msg() {
-  # Never fail CI if Telegram rejects messages
   local text="$1"
   curl -sS -X POST "${api}/sendMessage" \
     -d chat_id="${TG_CHAT_ID}" \
     -d parse_mode="HTML" \
-    --data-urlencode text="$text" >/dev/null 2>&1 || {
-      log_err "sendMessage failed"
-      return 0
-    }
-  return 0
+    --data-urlencode text="$text" >/dev/null 2>&1 || true
 }
 
 safe_send_doc_raw() {
   local path="$1"
-  local caption="${2:-}"
-
-  [ -f "$path" ] || { log_err "file missing: $path"; return 0; }
-
-  # Use HTML captions
-  if [ -n "$caption" ]; then
-    curl -sS \
-      -F chat_id="${TG_CHAT_ID}" \
-      --form-string parse_mode="HTML" \
-      --form-string caption="$caption" \
-      -F document=@"$path" \
-      "${api}/sendDocument" >/dev/null 2>&1 || {
-        log_err "sendDocument failed for: $path"
-        return 0
-      }
-  else
-    curl -sS \
-      -F chat_id="${TG_CHAT_ID}" \
-      -F document=@"$path" \
-      "${api}/sendDocument" >/dev/null 2>&1 || {
-        log_err "sendDocument failed for: $path"
-        return 0
-      }
-  fi
-
-  return 0
+  local caption="$2"
+  [ -f "$path" ] || return 0
+  curl -sS \
+    -F chat_id="${TG_CHAT_ID}" \
+    --form-string parse_mode="HTML" \
+    --form-string caption="$caption" \
+    -F document=@"$path" \
+    "${api}/sendDocument" >/dev/null 2>&1 || {
+      log_err "sendDocument failed for: $path"
+      return 0
+    }
 }
 
 safe_send_doc_auto() {
-  # Splits big files into parts so Telegram bot can upload them
   local path="$1"
-  local caption="${2:-}"
-
-  [ -f "$path" ] || { log_err "file missing: $path"; return 0; }
+  local caption="$2"
+  [ -f "$path" ] || return 0
 
   local size max hsz
   size="$(stat -c%s "$path" 2>/dev/null || echo 0)"
-  max=$((45 * 1024 * 1024)) # 45 MiB
+  max=$((45 * 1024 * 1024))
   hsz="$(human_size "$size")"
 
   if [ "$size" -le "$max" ]; then
@@ -106,10 +75,7 @@ safe_send_doc_auto() {
   prefix="${dir}/${base}.part-"
 
   rm -f "${prefix}"* 2>/dev/null || true
-  split -b "${max}" -d -a 2 "$path" "${prefix}" || {
-    log_err "split failed for: $path"
-    return 0
-  }
+  split -b "${max}" -d -a 2 "$path" "${prefix}" || return 0
 
   safe_send_msg "<b>📦 Large file</b>
 <code>${base}</code> is <code>${hsz}</code>.
@@ -121,12 +87,10 @@ Uploading in parts…"
   done
 
   safe_send_msg "✅ Parts uploaded for <code>${base}</code>
-Restore on PC:
+Restore:
 <code>cat ${base}.part-* &gt; ${base}</code>"
-  return 0
 }
 
-# ---------- modes ----------
 if [ "$MODE" = "start" ]; then
   base_boot="(none)"; [ -n "$BASE_BOOT_URL" ] && base_boot="provided"
   base_vboot="(none)"; [ -n "$BASE_VENDOR_BOOT_URL" ] && base_vboot="provided"
@@ -159,20 +123,14 @@ ${branding}
 fi
 
 if [ "$MODE" = "success" ]; then
-  # Use exported env vars if present, else find by glob
   ZIP="${ZIP_NAME:-}"; [ -z "$ZIP" ] && ZIP="$(pick_latest 'Kernel-*.zip')"
-  BOOT="${BOOT_IMG_NAME:-}"; [ -z "$BOOT" ] && BOOT="$(pick_latest 'boot-*.img')"
-  VBOOT="${VENDOR_BOOT_IMG_NAME:-}"; [ -z "$VBOOT" ] && VBOOT="$(pick_latest 'vendor_boot-*.img')"
-  IBOOT="${INIT_BOOT_IMG_NAME:-}"; [ -z "$IBOOT" ] && IBOOT="$(pick_latest 'init_boot-*.img')"
+
+  BOOTXZ="${BOOT_IMG_XZ_NAME:-}"; [ -z "$BOOTXZ" ] && BOOTXZ="$(pick_latest 'boot-*.img.xz')"
+  VBOOTXZ="${VENDOR_BOOT_IMG_XZ_NAME:-}"; [ -z "$VBOOTXZ" ] && VBOOTXZ="$(pick_latest 'vendor_boot-*.img.xz')"
+  IBOOTXZ="${INIT_BOOT_IMG_XZ_NAME:-}"; [ -z "$IBOOTXZ" ] && IBOOTXZ="$(pick_latest 'init_boot-*.img.xz')"
 
   BOOTMODE="${BOOT_IMG_MODE:-unknown}"
   LOG="kernel/build.log"
-
-  # Sizes for message
-  zipsz=""; [ -n "$ZIP" ] && [ -f "$ZIP" ] && zipsz="$(human_size "$(stat -c%s "$ZIP")")"
-  bootsz=""; [ -n "$BOOT" ] && [ -f "$BOOT" ] && bootsz="$(human_size "$(stat -c%s "$BOOT")")"
-  vbootsz=""; [ -n "$VBOOT" ] && [ -f "$VBOOT" ] && vbootsz="$(human_size "$(stat -c%s "$VBOOT")")"
-  ibootsz=""; [ -n "$IBOOT" ] && [ -f "$IBOOT" ] && ibootsz="$(human_size "$(stat -c%s "$IBOOT")")"
 
   safe_send_msg "<b>✅ Build Succeeded</b>
 ━━━━━━━━━━━━━━━━━━━━
@@ -181,28 +139,19 @@ if [ "$MODE" = "success" ]; then
 🐧 <b>Linux</b>: <code>${KERNEL_VERSION:-unknown}</code>
 🛠 <b>Clang</b>: <code>${CLANG_VERSION:-unknown}</code>
 ⏱ <b>Time</b>: <code>${BUILD_TIME:-0}s</code>
+🧩 <b>boot mode</b>: <code>${BOOTMODE}</code>
 
-🧩 <b>boot.img mode</b>: <code>${BOOTMODE}</code>
-
-📦 <b>Artifacts</b>
-• ZIP: <code>${ZIP:-n/a}</code> ${zipsz:+(<code>$zipsz</code>)}
-• boot.img: <code>${BOOT:-n/a}</code> ${bootsz:+(<code>$bootsz</code>)}
-• vendor_boot: <code>${VBOOT:-n/a}</code> ${vbootsz:+(<code>$vbootsz</code>)}
-• init_boot: <code>${IBOOT:-n/a}</code> ${ibootsz:+(<code>$ibootsz</code>)}
-
-📤 Uploading files…"
+📦 Uploading artifacts…"
 
   [ -n "$ZIP" ] && safe_send_doc_auto "$ZIP" "📦 <b>AnyKernel ZIP</b> • <code>${DEVICE}</code>"
-  [ -n "$BOOT" ] && safe_send_doc_auto "$BOOT" "🧩 <b>boot.img</b> • <code>${DEVICE}</code>"
-  [ -n "$VBOOT" ] && safe_send_doc_auto "$VBOOT" "🧩 <b>vendor_boot.img</b> • <code>${DEVICE}</code>"
-  [ -n "$IBOOT" ] && safe_send_doc_auto "$IBOOT" "🧩 <b>init_boot.img</b> • <code>${DEVICE}</code>"
+  [ -n "$BOOTXZ" ] && safe_send_doc_auto "$BOOTXZ" "🧩 <b>boot.img.xz</b> • <code>${DEVICE}</code>"
+  [ -n "$VBOOTXZ" ] && safe_send_doc_auto "$VBOOTXZ" "🧩 <b>vendor_boot.img.xz</b> • <code>${DEVICE}</code>"
+  [ -n "$IBOOTXZ" ] && safe_send_doc_auto "$IBOOTXZ" "🧩 <b>init_boot.img.xz</b> • <code>${DEVICE}</code>"
   safe_send_doc_auto "$LOG" "🧾 <b>build.log</b>"
 
-  # Helpful warning if minimal boot.img (often causes fastboot)
   if [ "$BOOTMODE" = "minimal" ]; then
-    safe_send_msg "⚠️ <b>Warning</b>: boot.img was generated in <code>minimal</code> mode.
-This often boots to fastboot.
-Provide a correct <code>base_boot_img_url</code> from your exact ROM build to get <code>repacked</code> mode."
+    safe_send_msg "⚠️ <b>Warning</b>: boot.img was built in <code>minimal</code> mode.
+Provide a correct <code>base_boot_img_url</code> from your exact ROM build for <code>repacked</code> mode."
   fi
 
   exit 0
@@ -223,5 +172,4 @@ if [ "$MODE" = "failure" ]; then
   exit 0
 fi
 
-log_err "Unknown mode: $MODE"
 exit 0
