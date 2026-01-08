@@ -44,7 +44,6 @@ set_kcfg_str() {
   local key="$1"
   local val="$2"
   local tool; tool="$(cfg_tool)"
-
   if [ -n "$tool" ]; then
     "$tool" --file out/.config --set-str "$key" "$val" >/dev/null 2>&1 || true
   else
@@ -60,7 +59,6 @@ set_kcfg_bool() {
   local key="$1"
   local yn="$2"
   local tool; tool="$(cfg_tool)"
-
   if [ -n "$tool" ]; then
     if [ "$yn" = "y" ]; then "$tool" --file out/.config -e "$key" >/dev/null 2>&1 || true
     else "$tool" --file out/.config -d "$key" >/dev/null 2>&1 || true
@@ -77,7 +75,6 @@ set_kcfg_bool() {
 }
 
 apply_custom_kconfig_branding() {
-  # New function to apply the requested values
   if [ "${CUSTOM_CONFIG_ENABLED:-false}" != "true" ]; then
     return 0
   fi
@@ -105,14 +102,7 @@ apply_custom_kconfig_branding() {
   fi
 
   set_kcfg_bool LOCALVERSION_AUTO n
-
   run_oldconfig || true
-
-  echo "Branding applied:"
-  echo "  CONFIG_LOCALVERSION=$localversion"
-  echo "  CONFIG_DEFAULT_HOSTNAME=$hostname"
-  echo "  CONFIG_UNAME_OVERRIDE_STRING=$uname_override"
-  echo "  CONFIG_CC_VERSION_TEXT=$cc_text"
 }
 
 make O=out "$DEFCONFIG"
@@ -135,9 +125,10 @@ CLANG_VER="$(clang --version | head -n1 | tr -d '\n' || true)"
 printf "KERNEL_VERSION=%s\n" "${KVER:-unknown}" >> "$GITHUB_ENV"
 printf "CLANG_VERSION=%s\n" "${CLANG_VER:-unknown}" >> "$GITHUB_ENV"
 
+# IMPORTANT: do NOT overwrite kernel/build.log; append build section instead
 mkdir -p "${GITHUB_WORKSPACE}/kernel" || true
-cp -f build.log "${GITHUB_WORKSPACE}/kernel/build.log" 2>/dev/null || true
-cp -f error.log "${GITHUB_WORKSPACE}/kernel/error.log" 2>/dev/null || true
+cat build.log >> "${GITHUB_WORKSPACE}/kernel/build.log" 2>/dev/null || true
+[ -f error.log ] && cat error.log >> "${GITHUB_WORKSPACE}/kernel/error.log" 2>/dev/null || true
 
 ccache -s || true
 exit 0
