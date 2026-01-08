@@ -91,7 +91,7 @@ jobs:
 
       - name: Install dependencies
         shell: bash
-        run: ci/install_deps.sh
+        run: ci/run_logged.sh ci/install_deps.sh
 
       - name: Cache AOSP mkbootimg
         uses: actions/cache@v4
@@ -101,7 +101,7 @@ jobs:
 
       - name: Setup AOSP mkbootimg
         shell: bash
-        run: ci/setup_aosp_mkbootimg.sh
+        run: ci/run_logged.sh ci/setup_aosp_mkbootimg.sh
 
       - name: Restore Proton Clang cache
         uses: actions/cache@v4
@@ -111,7 +111,7 @@ jobs:
 
       - name: Setup Proton Clang
         shell: bash
-        run: ci/setup_proton_clang.sh
+        run: ci/run_logged.sh ci/setup_proton_clang.sh
 
       - name: Restore ccache
         uses: actions/cache@v4
@@ -124,28 +124,16 @@ jobs:
 
       - name: Clone Kernel Source
         shell: bash
-        run: ci/clone_kernel.sh "${{ inputs.kernel_source }}" "${{ inputs.kernel_branch }}"
+        run: ci/run_logged.sh ci/clone_kernel.sh "${{ inputs.kernel_source }}" "${{ inputs.kernel_branch }}"
 
       - name: Patch unsupported Polly flags
         shell: bash
-        run: ci/patch_polly.sh
+        run: ci/run_logged.sh ci/patch_polly.sh
 
       - name: Telegram Build Start
         if: ${{ env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
-        run: >
-          ci/telegram.sh start
-          "${{ inputs.device }}"
-          "${{ inputs.kernel_branch }}"
-          "${{ inputs.defconfig }}"
-          "${{ inputs.base_boot_img_url }}"
-          "${{ inputs.base_vendor_boot_img_url }}"
-          "${{ inputs.base_init_boot_img_url }}"
-          "${{ inputs.enable_custom_config }}"
-          "${{ inputs.config_localversion }}"
-          "${{ inputs.config_default_hostname }}"
-          "${{ inputs.config_uname_override_string }}"
-          "${{ inputs.config_cc_version_text }}"
+        run: ci/telegram.sh start "${{ inputs.device }}" "${{ inputs.kernel_branch }}" "${{ inputs.defconfig }}" "${{ inputs.base_boot_img_url }}" "${{ inputs.base_vendor_boot_img_url }}" "${{ inputs.base_init_boot_img_url }}" "${{ inputs.enable_custom_config }}" "${{ inputs.config_localversion }}" "${{ inputs.config_default_hostname }}" "${{ inputs.config_uname_override_string }}" "${{ inputs.config_cc_version_text }}"
 
       - name: Build Kernel
         shell: bash
@@ -155,16 +143,16 @@ jobs:
           CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
           CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
           CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
-        run: ci/build_kernel.sh "${{ inputs.defconfig }}"
+        run: ci/run_logged.sh ci/build_kernel.sh "${{ inputs.defconfig }}"
 
       - name: Detect GKI
         shell: bash
-        run: ci/detect_gki.sh
+        run: ci/run_logged.sh ci/detect_gki.sh
 
       - name: Ensure AnyKernel core exists
         if: env.SUCCESS == '1'
         shell: bash
-        run: ci/ensure_anykernel_core.sh
+        run: ci/run_logged.sh ci/ensure_anykernel_core.sh
 
       - name: Package AnyKernel ZIP
         if: env.SUCCESS == '1'
@@ -175,22 +163,12 @@ jobs:
           CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
           CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
           CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
-        run: >
-          ci/package_anykernel.sh
-          "${{ inputs.device }}"
-          "${{ inputs.base_boot_img_url }}"
-          "${{ inputs.base_vendor_boot_img_url }}"
-          "${{ inputs.base_init_boot_img_url }}"
+        run: ci/run_logged.sh ci/package_anykernel.sh "${{ inputs.device }}" "${{ inputs.base_boot_img_url }}" "${{ inputs.base_vendor_boot_img_url }}" "${{ inputs.base_init_boot_img_url }}"
 
-      - name: Repack boot.img and fetch vendor/init boot
+      - name: Repack images and compress
         if: env.SUCCESS == '1'
         shell: bash
-        run: >
-          ci/repack_images.sh
-          "${{ inputs.device }}"
-          "${{ inputs.base_boot_img_url }}"
-          "${{ inputs.base_vendor_boot_img_url }}"
-          "${{ inputs.base_init_boot_img_url }}"
+        run: ci/run_logged.sh ci/repack_images.sh "${{ inputs.device }}" "${{ inputs.base_boot_img_url }}" "${{ inputs.base_vendor_boot_img_url }}" "${{ inputs.base_init_boot_img_url }}"
 
       - name: Upload artifacts
         if: always()
@@ -199,9 +177,9 @@ jobs:
           name: kernel-${{ inputs.device }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             Kernel-*.zip
-            boot-*.img
-            vendor_boot-*.img
-            init_boot-*.img
+            boot-*.img.xz
+            vendor_boot-*.img.xz
+            init_boot-*.img.xz
             kernel/build.log
             kernel/error.log
           if-no-files-found: warn
@@ -215,9 +193,9 @@ jobs:
           fail_on_unmatched_files: false
           files: |
             Kernel-*.zip
-            boot-*.img
-            vendor_boot-*.img
-            init_boot-*.img
+            boot-*.img.xz
+            vendor_boot-*.img.xz
+            init_boot-*.img.xz
             kernel/build.log
 
       - name: Telegram Success
