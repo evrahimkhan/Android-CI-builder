@@ -125,7 +125,6 @@ CLANG_VER="$(clang --version | head -n1 | tr -d '\n' || true)"
 printf "KERNEL_VERSION=%s\n" "${KVER:-unknown}" >> "$GITHUB_ENV"
 printf "CLANG_VERSION=%s\n" "${CLANG_VER:-unknown}" >> "$GITHUB_ENV"
 
-# IMPORTANT: do NOT overwrite kernel/build.log; append build section instead
 mkdir -p "${GITHUB_WORKSPACE}/kernel" || true
 cat build.log >> "${GITHUB_WORKSPACE}/kernel/build.log" 2>/dev/null || true
 [ -f error.log ] && cat error.log >> "${GITHUB_WORKSPACE}/kernel/error.log" 2>/dev/null || true
