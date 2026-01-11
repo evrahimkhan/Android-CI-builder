@@ -13,7 +13,6 @@ ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
 log() { echo "[$(ts)] [repack] $*"; }
 
 redact_url() {
-  # strip query string to avoid logging signed tokens
   local u="$1"
   echo "${u%%\?*}"
 }
@@ -29,7 +28,6 @@ show_file() {
 
 command -v mkbootimg >/dev/null 2>&1 || { log "ERROR: mkbootimg not found on PATH (run ci/setup_aosp_mkbootimg.sh)"; exit 1; }
 
-# Determine mkbootimg output flag variant
 OUTFLAG="--output"
 if mkbootimg --help 2>/dev/null | grep -qE '(^|[[:space:]])-o[[:space:]]+OUTPUT\b' && ! mkbootimg --help 2>/dev/null | grep -q -- '--output'; then
   OUTFLAG="-o"
@@ -40,7 +38,6 @@ SUPPORTS_BOOTCONFIG="0"
 mkbootimg --help 2>/dev/null | grep -q -- '--bootconfig' && SUPPORTS_BOOTCONFIG="1"
 log "mkbootimg supports --bootconfig: ${SUPPORTS_BOOTCONFIG}"
 
-# Pick kernel image
 KIMG=""
 for f in Image.gz-dtb Image-dtb Image.gz Image.lz4 Image zImage; do
   if [ -f "${BOOTDIR}/${f}" ]; then
@@ -80,7 +77,6 @@ download_to() {
   show_file "$out"
 }
 
-# ---- Repack boot.img from base (preferred) ----
 if [ -n "$BASE_BOOT_URL" ]; then
   if command -v unpack_bootimg >/dev/null 2>&1; then
     log "Base boot.img provided: yes (will repack from base)"
@@ -90,7 +86,6 @@ if [ -n "$BASE_BOOT_URL" ]; then
     mkdir -p boot-unpack
 
     log "Running unpack_bootimg..."
-    # Do not suppress output — you asked for detailed logs
     set +e
     unpack_bootimg --boot_img base_boot.img --out boot-unpack
     U_RC=$?
@@ -134,7 +129,6 @@ if [ -n "$BASE_BOOT_URL" ]; then
     log "  cmdline length: ${#CMDLINE}"
     log "  cmdline preview: ${CMDLINE:0:140}"
 
-    # Build mkbootimg argv safely
     ARGS=( --kernel "$KIMG_PATH" )
     if [ -n "$RAMDISK" ]; then
       ARGS+=( --ramdisk "$RAMDISK" )
@@ -142,7 +136,6 @@ if [ -n "$BASE_BOOT_URL" ]; then
       ARGS+=( --ramdisk "$EMPTY_RD" )
     fi
 
-    # Always pass cmdline as a single argument (even empty)
     ARGS+=( --cmdline "$CMDLINE" )
     ARGS+=( --header_version "$HV" )
 
@@ -157,7 +150,6 @@ if [ -n "$BASE_BOOT_URL" ]; then
     ARGS+=( "$OUTFLAG" "$OUT_BOOT_RAW" )
 
     log "Running mkbootimg with arguments:"
-    # Print args with clear quoting
     for a in "${ARGS[@]}"; do
       printf '[%s]\n' "$a"
     done
@@ -181,7 +173,6 @@ else
   log "No base_boot_img_url provided. Will generate minimal boot.img (often not bootable)."
 fi
 
-# ---- Minimal fallback boot.img ----
 if [ "$BOOT_MODE" != "repacked" ]; then
   log "Generating minimal boot.img (fallback)."
   ARGS=( --kernel "$KIMG_PATH" --ramdisk "$EMPTY_RD" --cmdline "" --header_version 0 "$OUTFLAG" "$OUT_BOOT_RAW" )
@@ -196,12 +187,10 @@ fi
 
 echo "BOOT_IMG_MODE=${BOOT_MODE}" >> "$GITHUB_ENV"
 
-# ---- Compress boot.img (upload only compressed) ----
 log "Compressing boot.img -> ${OUT_BOOT_XZ}"
 xz -T0 -9 -f "$OUT_BOOT_RAW"
 show_file "$OUT_BOOT_XZ"
 
-# ---- Optional vendor_boot/init_boot: download + compress (upload only compressed) ----
 if [ -n "$BASE_VENDOR_BOOT_URL" ]; then
   VBOOT_RAW="vendor_boot-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.img"
   VBOOT_XZ="${VBOOT_RAW}.xz"
