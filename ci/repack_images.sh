@@ -56,10 +56,6 @@ KIMG_PATH="${BOOTDIR}/${KIMG}"
 log "Selected kernel image: ${KIMG_PATH}"
 show_file "$KIMG_PATH"
 
-EMPTY_RD="$(mktemp)"
-: > "$EMPTY_RD"
-log "Created empty ramdisk: ${EMPTY_RD}"
-
 OUT_BOOT_RAW="boot-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.img"
 OUT_BOOT_XZ="${OUT_BOOT_RAW}.xz"
 echo "BOOT_IMG_NAME=${OUT_BOOT_RAW}" >> "$GITHUB_ENV"
@@ -77,6 +73,7 @@ download_to() {
   show_file "$out"
 }
 
+# ---- Repack boot.img from base (preferred) ----
 if [ -n "$BASE_BOOT_URL" ]; then
   if command -v unpack_bootimg >/dev/null 2>&1; then
     log "Base boot.img provided: yes (will repack from base)"
@@ -103,7 +100,7 @@ if [ -n "$BASE_BOOT_URL" ]; then
     OSV_FILE="$(pick1 boot-unpack '*os_version*')"
     OSP_FILE="$(pick1 boot-unpack '*os_patch_level*')"
 
-    [ -n "$RAMDISK" ] && show_file "$RAMDISK" || log "No ramdisk extracted; using empty ramdisk"
+    [ -n "$RAMDISK" ] && show_file "$RAMDISK" || log "WARNING: No ramdisk extracted!"
     [ -n "$DTB" ] && show_file "$DTB" || log "No DTB extracted"
     [ -n "$BOOTCONFIG" ] && show_file "$BOOTCONFIG" || log "No bootconfig extracted"
 
@@ -130,10 +127,13 @@ if [ -n "$BASE_BOOT_URL" ]; then
     log "  cmdline preview: ${CMDLINE:0:140}"
 
     ARGS=( --kernel "$KIMG_PATH" )
+    
+    # CRITICAL: Never use empty ramdisk if base was provided!
     if [ -n "$RAMDISK" ]; then
       ARGS+=( --ramdisk "$RAMDISK" )
     else
-      ARGS+=( --ramdisk "$EMPTY_RD" )
+      log "ERROR: Base boot.img provided but no ramdisk found. Aborting repack."
+      exit 1
     fi
 
     ARGS+=( --cmdline "$CMDLINE" )
@@ -164,17 +164,19 @@ if [ -n "$BASE_BOOT_URL" ]; then
       BOOT_MODE="repacked"
       show_file "$OUT_BOOT_RAW"
     else
-      log "Repack failed; will fall back to minimal boot.img"
+      log "Repack failed."
+      exit 1
     fi
   else
-    log "Base boot.img provided, but unpack_bootimg not available on PATH. Repack skipped."
+    log "ERROR: unpack_bootimg not available. Cannot repack without it."
+    exit 1
   fi
 else
-  log "No base_boot_img_url provided. Will generate minimal boot.img (often not bootable)."
-fi
+  log "WARNING: No base_boot_img_url provided. Generating minimal boot.img (LIKELY NON-BOOTABLE)."
+  EMPTY_RD="$(mktemp)"
+  : > "$EMPTY_RD"
+  log "Created empty ramdisk: ${EMPTY_RD}"
 
-if [ "$BOOT_MODE" != "repacked" ]; then
-  log "Generating minimal boot.img (fallback)."
   ARGS=( --kernel "$KIMG_PATH" --ramdisk "$EMPTY_RD" --cmdline "" --header_version 0 "$OUTFLAG" "$OUT_BOOT_RAW" )
 
   log "mkbootimg args (minimal):"
@@ -191,32 +193,27 @@ log "Compressing boot.img -> ${OUT_BOOT_XZ}"
 xz -T0 -9 -f "$OUT_BOOT_RAW"
 show_file "$OUT_BOOT_XZ"
 
+# ---- Optional vendor_boot/init_boot: download + compress ----
 if [ -n "$BASE_VENDOR_BOOT_URL" ]; then
   VBOOT_RAW="vendor_boot-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.img"
   VBOOT_XZ="${VBOOT_RAW}.xz"
   echo "VENDOR_BOOT_IMG_XZ_NAME=${VBOOT_XZ}" >> "$GITHUB_ENV"
-
   download_to "$BASE_VENDOR_BOOT_URL" "$VBOOT_RAW"
-  log "Compressing vendor_boot -> ${VBOOT_XZ}"
   xz -T0 -9 -f "$VBOOT_RAW"
   show_file "$VBOOT_XZ"
 else
   echo "VENDOR_BOOT_IMG_XZ_NAME=" >> "$GITHUB_ENV"
-  log "No base_vendor_boot_img_url provided."
 fi
 
 if [ -n "$BASE_INIT_BOOT_URL" ]; then
   IBOOT_RAW="init_boot-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.img"
   IBOOT_XZ="${IBOOT_RAW}.xz"
   echo "INIT_BOOT_IMG_XZ_NAME=${IBOOT_XZ}" >> "$GITHUB_ENV"
-
   download_to "$BASE_INIT_BOOT_URL" "$IBOOT_RAW"
-  log "Compressing init_boot -> ${IBOOT_XZ}"
   xz -T0 -9 -f "$IBOOT_RAW"
   show_file "$IBOOT_XZ"
 else
   echo "INIT_BOOT_IMG_XZ_NAME=" >> "$GITHUB_ENV"
-  log "No base_init_boot_img_url provided."
 fi
 
 log "Done. BOOT_IMG_MODE=${BOOT_MODE}"
