@@ -2,6 +2,28 @@
 set -euo pipefail
 
 DEFCONFIG="${1:?defconfig required}"
+
+# Validate GITHUB_WORKSPACE and GITHUB_ENV to prevent path traversal
+if [[ ! "$GITHUB_WORKSPACE" =~ ^/ ]]; then
+  echo "ERROR: GITHUB_WORKSPACE must be an absolute path: $GITHUB_WORKSPACE" >&2
+  exit 1
+fi
+
+if [[ "$GITHUB_WORKSPACE" == *".."* ]]; then
+  echo "ERROR: GITHUB_WORKSPACE contains invalid characters: $GITHUB_WORKSPACE" >&2
+  exit 1
+fi
+
+if [[ ! "$GITHUB_ENV" =~ ^/ ]]; then
+  echo "ERROR: GITHUB_ENV must be an absolute path: $GITHUB_ENV" >&2
+  exit 1
+fi
+
+if [[ "$GITHUB_ENV" == *".."* ]]; then
+  echo "ERROR: GITHUB_ENV contains invalid characters: $GITHUB_ENV" >&2
+  exit 1
+fi
+
 export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
 
 echo "SUCCESS=0" >> "$GITHUB_ENV"
@@ -43,14 +65,24 @@ cfg_tool() {
 set_kcfg_str() {
   local key="$1"
   local val="$2"
+  # Sanitize inputs to prevent command injection
+  if [[ ! "$key" =~ ^[A-Za-z0-9_]+$ ]]; then
+    echo "ERROR: Invalid key format: $key" >&2
+    return 1
+  fi
+
+  # Escape special characters in value to prevent injection
+  local sanitized_val
+  sanitized_val=$(printf '%s\n' "$val" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
   local tool; tool="$(cfg_tool)"
   if [ -n "$tool" ]; then
-    "$tool" --file out/.config --set-str "$key" "$val" >/dev/null 2>&1 || true
+    "$tool" --file out/.config --set-str "$key" "$sanitized_val" >/dev/null 2>&1 || true
   else
     if grep -q "^CONFIG_${key}=" out/.config 2>/dev/null; then
-      sed -i "s|^CONFIG_${key}=.*|CONFIG_${key}=\"${val//\"/\\\"}\"|" out/.config || true
+      sed -i "s|^CONFIG_${key}=.*|CONFIG_${key}=\"${sanitized_val}\"|" out/.config || true
     else
-      printf 'CONFIG_%s="%s"\n' "$key" "${val//\"/\\\"}" >> out/.config
+      printf 'CONFIG_%s="%s"\n' "$key" "$sanitized_val" >> out/.config
     fi
   fi
 }
@@ -58,6 +90,17 @@ set_kcfg_str() {
 set_kcfg_bool() {
   local key="$1"
   local yn="$2"
+  # Sanitize inputs to prevent command injection
+  if [[ ! "$key" =~ ^[A-Za-z0-9_]+$ ]]; then
+    echo "ERROR: Invalid key format: $key" >&2
+    return 1
+  fi
+
+  if [[ ! "$yn" =~ ^[yn]$ ]]; then
+    echo "ERROR: Invalid yn value: $yn, must be 'y' or 'n'" >&2
+    return 1
+  fi
+
   local tool; tool="$(cfg_tool)"
   if [ -n "$tool" ]; then
     if [ "$yn" = "y" ]; then "$tool" --file out/.config -e "$key" >/dev/null 2>&1 || true

@@ -10,4 +10,12 @@ if [ ! -f anykernel/tools/ak3-core.sh ]; then
   rm -rf anykernel_upstream
 fi
 
-chmod 755 anykernel/anykernel.sh || true
+# Verify the file exists and is legitimate before setting permissions
+if [ -f anykernel/anykernel.sh ]; then
+  # Check if it's a regular file (not a symlink to somewhere unsafe)
+  if [ -L anykernel/anykernel.sh ] || [ ! -r anykernel/anykernel.sh ]; then
+    echo "ERROR: anykernel/anykernel.sh is not a safe regular file" >&2
+    exit 1
+  fi
+  chmod 755 anykernel/anykernel.sh || true
+fi

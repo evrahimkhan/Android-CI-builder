@@ -6,6 +6,12 @@ BASE_BOOT_URL="${2:-}"
 BASE_VENDOR_BOOT_URL="${3:-}"
 BASE_INIT_BOOT_URL="${4:-}"
 
+# Validate device name to prevent path traversal
+if [[ ! "$DEVICE" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+  echo "ERROR: Invalid device name format: $DEVICE" >&2
+  exit 1
+fi
+
 BOOTDIR="kernel/out/arch/arm64/boot"
 test -d "$BOOTDIR"
 
@@ -65,11 +71,29 @@ BOOT_MODE="minimal"
 
 pick1() { find "$1" -maxdepth 3 -type f -iname "$2" 2>/dev/null | head -n1 || true; }
 
+validate_url() {
+  local url="$1"
+  # Validate URL format to prevent SSRF
+  if [[ ! "$url" =~ ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]*)*(\?[a-zA-Z0-9._-=&]*)?$ ]]; then
+    echo "ERROR: Invalid URL format: $url" >&2
+    return 1
+  fi
+  # Prevent localhost/internal IP access
+  if [[ "$url" =~ (localhost|127\.0\.0\.1|0\.0\.0\.0|::1|\[::1\]|\.local|\.internal) ]]; then
+    echo "ERROR: URL points to internal address: $url" >&2
+    return 1
+  fi
+}
+
 download_to() {
   local url="$1"
   local out="$2"
+
+  # Validate URL before downloading
+  validate_url "$url" || { echo "ERROR: Invalid URL for download: $url" >&2; exit 1; }
+
   log "Downloading: $(redact_url "$url") -> $out"
-  curl -L --fail --retry 3 --retry-delay 2 --progress-bar -o "$out" "$url"
+  curl -L --fail --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 300 -A "Android-CI-Builder/1.0" -o "$out" "$url"
   show_file "$out"
 }
 

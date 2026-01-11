@@ -15,6 +15,19 @@ CFG_DEFAULT_HOSTNAME="${10:-CI Builder}"
 CFG_UNAME_OVERRIDE_STRING="${11:-}"
 CFG_CC_VERSION_TEXT="${12:-}"
 
+# Validate inputs to prevent potential information disclosure or injection
+if [[ ! "$MODE" =~ ^(start|success|failure)$ ]]; then
+  echo "ERROR: Invalid mode: $MODE" >&2
+  exit 1
+fi
+
+# Sanitize device name to prevent injection
+DEVICE=$(printf '%s\n' "$DEVICE" | sed 's/[^a-zA-Z0-9._-]/_/g')
+
+# Sanitize other inputs
+BRANCH=$(printf '%s\n' "$BRANCH" | sed 's/[^a-zA-Z0-9/_.-]/_/g')
+DEFCONFIG=$(printf '%s\n' "$DEFCONFIG" | sed 's/[^a-zA-Z0-9/_.-]/_/g')
+
 cd "${GITHUB_WORKSPACE:-$(pwd)}"
 api="https://api.telegram.org/bot${TG_TOKEN}"
 

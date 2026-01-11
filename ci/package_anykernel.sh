@@ -6,6 +6,23 @@ BASE_BOOT_URL="${2:-}"
 BASE_VENDOR_BOOT_URL="${3:-}"
 BASE_INIT_BOOT_URL="${4:-}"
 
+# Validate device name to prevent path traversal
+if [[ ! "$DEVICE" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+  echo "ERROR: Invalid device name format: $DEVICE" >&2
+  exit 1
+fi
+
+# Validate GITHUB_ENV to prevent path traversal
+if [[ ! "$GITHUB_ENV" =~ ^/ ]]; then
+  echo "ERROR: GITHUB_ENV must be an absolute path: $GITHUB_ENV" >&2
+  exit 1
+fi
+
+if [[ "$GITHUB_ENV" == *".."* ]]; then
+  echo "ERROR: GITHUB_ENV contains invalid characters: $GITHUB_ENV" >&2
+  exit 1
+fi
+
 BOOTDIR="kernel/out/arch/arm64/boot"
 test -d "$BOOTDIR"
 

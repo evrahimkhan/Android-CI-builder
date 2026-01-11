@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Validate GITHUB_WORKSPACE to prevent path traversal
+if [[ ! "$GITHUB_WORKSPACE" =~ ^/ ]]; then
+  echo "ERROR: GITHUB_WORKSPACE must be an absolute path: $GITHUB_WORKSPACE" >&2
+  exit 1
+fi
+
+# Prevent directory traversal in the path
+if [[ "$GITHUB_WORKSPACE" == *".."* ]]; then
+  echo "ERROR: GITHUB_WORKSPACE contains invalid characters: $GITHUB_WORKSPACE" >&2
+  exit 1
+fi
+
 mkdir -p "${GITHUB_WORKSPACE}/kernel"
 LOG="${GITHUB_WORKSPACE}/kernel/build.log"
 ERR="${GITHUB_WORKSPACE}/kernel/error.log"

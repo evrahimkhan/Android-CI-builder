@@ -1,0 +1,9 @@
+installation:
+  version: 6.0.0-alpha.23
+  installDate: 2026-01-11T18:11:43.976Z
+  lastUpdated: 2026-01-11T18:11:43.976Z
+modules:
+  - core
+  - bmm
+ides:
+  - qwen
