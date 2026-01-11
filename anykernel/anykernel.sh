@@ -22,7 +22,7 @@ detect_byname() {
 AK3_BLOCK=""
 AK3_IS_SLOT_DEVICE=""
 
-if [ -n "$SLOT_SUFFIX" ]; then
+if [ -n "$SLOCK_SUFFIX" ]; then
   p="$(detect_byname boot 2>/dev/null || true)"
   if [ -n "$p" ]; then
     AK3_BLOCK="$p"
