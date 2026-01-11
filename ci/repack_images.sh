@@ -73,8 +73,8 @@ pick1() { find "$1" -maxdepth 3 -type f -iname "$2" 2>/dev/null | head -n1 || tr
 
 validate_url() {
   local url="$1"
-  # Validate URL format to prevent SSRF
-  if [[ ! "$url" =~ ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]*)*(\?[a-zA-Z0-9._-=&]*)?$ ]]; then
+  # Validate URL format to prevent SSRF - allow query parameters and fragments
+  if [[ ! "$url" =~ ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._%-]*)*(\?[a-zA-Z0-9._%-=&~]*)?(#[a-zA-Z0-9._%-=&~]*)?$ ]]; then
     echo "ERROR: Invalid URL format: $url" >&2
     return 1
   fi
