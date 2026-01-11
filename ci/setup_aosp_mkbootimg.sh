@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ ! -d aosp-mkbootimg/.git ]; then
-  git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg aosp-mkbootimg
+  git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg  aosp-mkbootimg
 fi
 
 MKBOOTIMG="$(find aosp-mkbootimg -maxdepth 4 -type f \( -name 'mkbootimg.py' -o -name 'mkbootimg' \) | head -n1 || true)"
