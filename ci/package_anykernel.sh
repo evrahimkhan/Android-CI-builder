@@ -2,9 +2,6 @@
 set -euo pipefail
 
 DEVICE="${1:?device required}"
-BASE_BOOT_URL="${2:-}"
-BASE_VENDOR_BOOT_URL="${3:-}"
-BASE_INIT_BOOT_URL="${4:-}"
 
 # Validate device name to prevent path traversal
 if [[ ! "$DEVICE" =~ ^[a-zA-Z0-9_-]+$ ]]; then
@@ -22,6 +19,11 @@ if [[ "$GITHUB_ENV" == *".."* ]]; then
   echo "ERROR: GITHUB_ENV contains invalid characters: $GITHUB_ENV" >&2
   exit 1
 fi
+
+# Set base URLs to empty since image repacking has been removed
+BASE_BOOT_URL=""
+BASE_VENDOR_BOOT_URL=""
+BASE_INIT_BOOT_URL=""
 
 BOOTDIR="kernel/out/arch/arm64/boot"
 test -d "$BOOTDIR"
@@ -53,9 +55,9 @@ Image: ${KIMG}
 CI: ${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}
 SHA: ${GITHUB_SHA}
 
-Base boot.img URL: ${BASE_BOOT_URL:-}
-Base vendor_boot URL: ${BASE_VENDOR_BOOT_URL:-}
-Base init_boot URL: ${BASE_INIT_BOOT_URL:-}
+Base boot.img URL: (not provided - image repacking removed)
+Base vendor_boot URL: (not provided - image repacking removed)
+Base init_boot URL: (not provided - image repacking removed)
 
 Custom config enabled: ${CUSTOM_CONFIG_ENABLED:-false}
 CONFIG_LOCALVERSION: ${CFG_LOCALVERSION:--CI}

@@ -20,21 +20,8 @@ on:
         required: true
         type: string
 
-      base_boot_img_url:
-        description: Base boot.img URL (recommended; used to repack boot.img safely)
-        required: false
-        default: ""
-        type: string
-      base_vendor_boot_img_url:
-        description: Optional base vendor_boot.img URL (download & upload)
-        required: false
-        default: ""
-        type: string
-      base_init_boot_img_url:
-        description: Optional base init_boot.img URL (download & upload)
-        required: false
-        default: ""
-        type: string
+      # Base image parameters removed as image repacking process has been removed
+      # Only AnyKernel ZIP creation is now used for flashing
 
       enable_custom_config:
         description: Enable custom Kconfig branding
@@ -92,9 +79,6 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: ci/run_logged.sh ci/install_deps.sh
-
-      # Removed AOSP mkbootimg setup as image repacking process has been removed
-      # Only AnyKernel ZIP creation is now used for flashing
 
       - name: Restore Proton Clang cache
         uses: actions/cache@v4
@@ -156,7 +140,7 @@ jobs:
           CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
           CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
           CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
-        run: ci/run_logged.sh ci/package_anykernel.sh "${{ inputs.device }}" "${{ inputs.base_boot_img_url }}" "${{ inputs.base_vendor_boot_img_url }}" "${{ inputs.base_init_boot_img_url }}"
+        run: ci/run_logged.sh ci/package_anykernel.sh "${{ inputs.device }}"
 
       # Removed image repacking process as requested
       # Only AnyKernel ZIP will be created for flashing
