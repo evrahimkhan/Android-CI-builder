@@ -1,5 +1,6 @@
 {
   "general": {
     "disableAutoUpdate": false
-  }
+  },
+  "$version": 2
 }

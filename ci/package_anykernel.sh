@@ -78,3 +78,8 @@ printf "Built for %s | Linux %s | CI %s/%s\n" \
 
 echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
 echo "KERNEL_IMAGE_FILE=${KIMG}" >> "$GITHUB_ENV"
+
+# Set image variables to empty since repack process is disabled
+echo "BOOT_IMG_XZ_NAME=" >> "$GITHUB_ENV"
+echo "VENDOR_BOOT_IMG_XZ_NAME=" >> "$GITHUB_ENV"
+echo "INIT_BOOT_IMG_XZ_NAME=" >> "$GITHUB_ENV"

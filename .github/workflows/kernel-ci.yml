@@ -93,15 +93,8 @@ jobs:
         shell: bash
         run: ci/run_logged.sh ci/install_deps.sh
 
-      - name: Cache AOSP mkbootimg
-        uses: actions/cache@v4
-        with:
-          path: aosp-mkbootimg
-          key: aosp-mkbootimg-v1
-
-      - name: Setup AOSP mkbootimg
-        shell: bash
-        run: ci/run_logged.sh ci/setup_aosp_mkbootimg.sh
+      # Removed AOSP mkbootimg setup as image repacking process has been removed
+      # Only AnyKernel ZIP creation is now used for flashing
 
       - name: Restore Proton Clang cache
         uses: actions/cache@v4
@@ -165,10 +158,8 @@ jobs:
           CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
         run: ci/run_logged.sh ci/package_anykernel.sh "${{ inputs.device }}" "${{ inputs.base_boot_img_url }}" "${{ inputs.base_vendor_boot_img_url }}" "${{ inputs.base_init_boot_img_url }}"
 
-      - name: Repack images and compress
-        if: env.SUCCESS == '1'
-        shell: bash
-        run: ci/run_logged.sh ci/repack_images.sh "${{ inputs.device }}" "${{ inputs.base_boot_img_url }}" "${{ inputs.base_vendor_boot_img_url }}" "${{ inputs.base_init_boot_img_url }}"
+      # Removed image repacking process as requested
+      # Only AnyKernel ZIP will be created for flashing
 
       - name: Upload artifacts
         if: always()
@@ -177,9 +168,6 @@ jobs:
           name: kernel-${{ inputs.device }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             Kernel-*.zip
-            boot-*.img.xz
-            vendor_boot-*.img.xz
-            init_boot-*.img.xz
             kernel/build.log
             kernel/error.log
           if-no-files-found: warn
@@ -193,9 +181,6 @@ jobs:
           fail_on_unmatched_files: false
           files: |
             Kernel-*.zip
-            boot-*.img.xz
-            vendor_boot-*.img.xz
-            init_boot-*.img.xz
             kernel/build.log
 
       - name: Telegram Success

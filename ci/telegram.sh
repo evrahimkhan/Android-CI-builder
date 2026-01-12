@@ -131,17 +131,15 @@ if [ "$MODE" = "start" ]; then
 
 ${branding}
 
-⏳ Compiling…"
+⏳ Compiling…
+Note: Only AnyKernel ZIP will be generated (no individual boot images)"
   exit 0
 fi
 
 if [ "$MODE" = "success" ]; then
   ZIP="${ZIP_NAME:-}"; [ -z "$ZIP" ] && ZIP="$(pick_latest 'Kernel-*.zip')"
 
-  BOOTXZ="${BOOT_IMG_XZ_NAME:-}"; [ -z "$BOOTXZ" ] && BOOTXZ="$(pick_latest 'boot-*.img.xz')"
-  VBOOTXZ="${VENDOR_BOOT_IMG_XZ_NAME:-}"; [ -z "$VBOOTXZ" ] && VBOOTXZ="$(pick_latest 'vendor_boot-*.img.xz')"
-  IBOOTXZ="${INIT_BOOT_IMG_XZ_NAME:-}"; [ -z "$IBOOTXZ" ] && IBOOTXZ="$(pick_latest 'init_boot-*.img.xz')"
-
+  # BOOTXZ, VBOOTXZ, and IBOOTXZ are not generated anymore since image repacking is disabled
   BOOTMODE="${BOOT_IMG_MODE:-unknown}"
   LOG="kernel/build.log"
 
@@ -152,20 +150,13 @@ if [ "$MODE" = "success" ]; then
 🐧 <b>Linux</b>: <code>${KERNEL_VERSION:-unknown}</code>
 🛠 <b>Clang</b>: <code>${CLANG_VERSION:-unknown}</code>
 ⏱ <b>Time</b>: <code>${BUILD_TIME:-0}s</code>
-🧩 <b>boot mode</b>: <code>${BOOTMODE}</code>
 
 📦 Uploading artifacts…"
 
   [ -n "$ZIP" ] && safe_send_doc_auto "$ZIP" "📦 <b>AnyKernel ZIP</b> • <code>${DEVICE}</code>"
-  [ -n "$BOOTXZ" ] && safe_send_doc_auto "$BOOTXZ" "🧩 <b>boot.img.xz</b> • <code>${DEVICE}</code>"
-  [ -n "$VBOOTXZ" ] && safe_send_doc_auto "$VBOOTXZ" "🧩 <b>vendor_boot.img.xz</b> • <code>${DEVICE}</code>"
-  [ -n "$IBOOTXZ" ] && safe_send_doc_auto "$IBOOTXZ" "🧩 <b>init_boot.img.xz</b> • <code>${DEVICE}</code>"
   safe_send_doc_auto "$LOG" "🧾 <b>build.log</b>"
 
-  if [ "$BOOTMODE" = "minimal" ]; then
-    safe_send_msg "⚠️ <b>Warning</b>: boot.img was built in <code>minimal</code> mode.
-Provide a correct <code>base_boot_img_url</code> from your exact ROM build for <code>repacked</code> mode."
-  fi
+  safe_send_msg "✅ Build completed. Only AnyKernel ZIP is available for flashing."
 
   exit 0
 fi
