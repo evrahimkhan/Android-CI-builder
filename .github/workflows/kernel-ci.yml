@@ -110,7 +110,7 @@ jobs:
       - name: Telegram Build Start
         if: ${{ env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
-        run: ci/telegram.sh start "${{ inputs.device }}" "${{ inputs.kernel_branch }}" "${{ inputs.defconfig }}" "${{ inputs.base_boot_img_url }}" "${{ inputs.base_vendor_boot_img_url }}" "${{ inputs.base_init_boot_img_url }}" "${{ inputs.enable_custom_config }}" "${{ inputs.config_localversion }}" "${{ inputs.config_default_hostname }}" "${{ inputs.config_uname_override_string }}" "${{ inputs.config_cc_version_text }}"
+        run: ci/telegram.sh start "${{ inputs.device }}" "${{ inputs.kernel_branch }}" "${{ inputs.defconfig }}" "" "" "" "${{ inputs.enable_custom_config }}" "${{ inputs.config_localversion }}" "${{ inputs.config_default_hostname }}" "${{ inputs.config_uname_override_string }}" "${{ inputs.config_cc_version_text }}"
 
       - name: Build Kernel
         shell: bash
