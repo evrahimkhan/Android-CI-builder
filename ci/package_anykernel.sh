@@ -25,6 +25,9 @@ BASE_BOOT_URL=""
 BASE_VENDOR_BOOT_URL=""
 BASE_INIT_BOOT_URL=""
 
+# Read NetHunter configuration status
+NETHUNTER_CONFIG_ENABLED="${NETHUNTER_CONFIG_ENABLED:-false}"
+
 BOOTDIR="kernel/out/arch/arm64/boot"
 test -d "$BOOTDIR"
 
@@ -59,6 +62,7 @@ Base boot.img URL: (not provided - image repacking removed)
 Base vendor_boot URL: (not provided - image repacking removed)
 Base init_boot URL: (not provided - image repacking removed)
 
+NetHunter configurations: ${NETHUNTER_CONFIG_ENABLED:-false}
 Custom config enabled: ${CUSTOM_CONFIG_ENABLED:-false}
 CONFIG_LOCALVERSION: ${CFG_LOCALVERSION:--CI}
 CONFIG_DEFAULT_HOSTNAME: ${CFG_DEFAULT_HOSTNAME:-CI Builder}

@@ -50,6 +50,13 @@ on:
         default: ""
         type: string
 
+      enable_nethunter_config:
+        description: Enable NetHunter kernel configurations
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -110,7 +117,7 @@ jobs:
       - name: Telegram Build Start
         if: ${{ env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
-        run: ci/telegram.sh start "${{ inputs.device }}" "${{ inputs.kernel_branch }}" "${{ inputs.defconfig }}" "" "" "" "${{ inputs.enable_custom_config }}" "${{ inputs.config_localversion }}" "${{ inputs.config_default_hostname }}" "${{ inputs.config_uname_override_string }}" "${{ inputs.config_cc_version_text }}"
+        run: ci/telegram.sh start "${{ inputs.device }}" "${{ inputs.kernel_branch }}" "${{ inputs.defconfig }}" "" "" "" "${{ inputs.enable_custom_config }}" "${{ inputs.config_localversion }}" "${{ inputs.config_default_hostname }}" "${{ inputs.config_uname_override_string }}" "${{ inputs.config_cc_version_text }}" "${{ inputs.enable_nethunter_config }}"
 
       - name: Build Kernel
         shell: bash
@@ -125,6 +132,11 @@ jobs:
       - name: Detect GKI
         shell: bash
         run: ci/run_logged.sh ci/detect_gki.sh
+
+      - name: Apply NetHunter configurations
+        if: inputs.enable_nethunter_config == 'true'
+        shell: bash
+        run: ci/run_logged.sh ci/enable_nethunter_config.sh "${{ inputs.defconfig }}"
 
       - name: Ensure AnyKernel core exists
         if: env.SUCCESS == '1'
