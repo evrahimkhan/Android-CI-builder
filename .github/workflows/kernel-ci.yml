@@ -136,7 +136,7 @@ jobs:
       - name: Apply NetHunter configurations
         if: inputs.enable_nethunter_config == 'true'
         shell: bash
-        run: ci/run_logged.sh ci/enable_nethunter_config.sh "${{ inputs.defconfig }}"
+        run: ci/run_logged.sh ci/enable_nethunter_config.sh
 
       - name: Ensure AnyKernel core exists
         if: env.SUCCESS == '1'
