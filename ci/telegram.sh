@@ -178,25 +178,11 @@ if [ "$MODE" = "success" ]; then
   # Only AnyKernel ZIP is generated (no individual boot images)
   LOG="kernel/build.log"
 
-  # Determine NetHunter configuration status from environment
-  NETHUNTER_STATUS="disabled"
+  # Determine NetHunter status based on environment
   if [ "${NETHUNTER_CONFIG_ENABLED:-false}" = "true" ]; then
     NETHUNTER_STATUS="enabled"
-  fi
-
-  # Get NetHunter integration verification status
-  NETHUNTER_VERIFICATION="${NETHUNTER_INTEGRATION_STATUS:-unknown}"
-  if [ "$NETHUNTER_VERIFICATION" = "not_enabled" ]; then
-    NETHUNTER_STATUS="disabled"
-  elif [ "$NETHUNTER_VERIFICATION" = "verified" ]; then
-    NETHUNTER_STATUS="enabled (verified)"
-  elif [ "$NETHUNTER_VERIFICATION" = "partial" ]; then
-    NETHUNTER_STATUS="enabled (partial)"
   else
-    # If verification status is unknown but NetHunter was enabled, show as enabled
-    if [ "${NETHUNTER_CONFIG_ENABLED:-false}" = "true" ]; then
-      NETHUNTER_STATUS="enabled"
-    fi
+    NETHUNTER_STATUS="disabled"
   fi
 
   safe_send_msg "<b>✅ Build Succeeded</b>

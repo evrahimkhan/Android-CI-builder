@@ -119,10 +119,6 @@ jobs:
         shell: bash
         run: ci/telegram.sh start "${{ inputs.device }}" "${{ inputs.kernel_branch }}" "${{ inputs.defconfig }}" "" "" "" "${{ inputs.enable_custom_config }}" "${{ inputs.config_localversion }}" "${{ inputs.config_default_hostname }}" "${{ inputs.config_uname_override_string }}" "${{ inputs.config_cc_version_text }}" "${{ inputs.enable_nethunter_config }}"
 
-      - name: Apply NetHunter configurations
-        if: inputs.enable_nethunter_config == 'true'
-        shell: bash
-        run: ci/run_logged.sh ci/enable_nethunter_config.sh
 
       - name: Build Kernel
         shell: bash
@@ -132,21 +128,13 @@ jobs:
           CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
           CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
           CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
+          ENABLE_NETHUNTER_CONFIG: ${{ inputs.enable_nethunter_config }}
         run: ci/run_logged.sh ci/build_kernel.sh "${{ inputs.defconfig }}"
 
       - name: Detect GKI
         shell: bash
         run: ci/run_logged.sh ci/detect_gki.sh
 
-      - name: Verify NetHunter integration
-        if: inputs.enable_nethunter_config == 'true'
-        shell: bash
-        run: ci/run_logged.sh ci/verify_nethunter.sh "true"
-
-      - name: Verify NetHunter not enabled (for status reporting)
-        if: inputs.enable_nethunter_config != 'true'
-        shell: bash
-        run: ci/run_logged.sh ci/verify_nethunter.sh "false"
 
       - name: Ensure AnyKernel core exists
         if: env.SUCCESS == '1'
