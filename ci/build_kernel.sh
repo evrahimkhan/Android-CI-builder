@@ -46,13 +46,18 @@ export OBJCOPY=llvm-objcopy
 export OBJDUMP=llvm-objdump
 export STRIP=llvm-strip
 
+# Prevent interactive configuration prompts
+export KCONFIG_NOTIMESTAMP=1
+export KERNELRELEASE=""
+
 cd kernel
 mkdir -p out
 
 run_oldconfig() {
   set +e
   set +o pipefail
-  yes "" 2>/dev/null | make O=out oldconfig
+  # Use yes "" to auto-answer prompts with defaults, but also redirect stdin to avoid hanging
+  yes "" | make O=out oldconfig 2>/dev/null
   local rc=$?
   set -o pipefail
   set -e
@@ -151,11 +156,18 @@ apply_custom_kconfig_branding() {
   fi
 
   set_kcfg_bool LOCALVERSION_AUTO n
-  run_oldconfig || true
+  if ! make O=out olddefconfig; then
+    # Fallback to oldconfig with yes "" if olddefconfig fails
+    run_oldconfig || true
+  fi
 }
 
 make O=out "$DEFCONFIG"
-run_oldconfig || { echo "ERROR: oldconfig failed" > error.log; exit 0; }
+# Use olddefconfig to automatically accept default values for new config options
+if ! make O=out olddefconfig; then
+  # Fallback to oldconfig with yes "" if olddefconfig fails
+  run_oldconfig || { echo "ERROR: oldconfig failed" > error.log; exit 0; }
+fi
 
 # Apply NetHunter configurations if enabled
 if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
@@ -489,8 +501,11 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
   echo "NETHUNTER_CONFIG_ENABLED=true" >> "$GITHUB_ENV"
   echo "NETHUNTER_CONFIG_APPLIED=true" >> "$GITHUB_ENV"
 
-  # Run oldconfig again to ensure all new configurations are properly set
-  run_oldconfig || true
+  # Run olddefconfig again to ensure all new configurations are properly set
+  if ! make O=out olddefconfig; then
+    # Fallback to oldconfig with yes "" if olddefconfig fails
+    run_oldconfig || true
+  fi
 fi
 
 apply_custom_kconfig_branding
