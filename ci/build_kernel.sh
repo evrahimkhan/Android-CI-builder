@@ -240,6 +240,12 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
   add_kconfig_option "CONFIG_WIRELESS" "y"
   add_kconfig_option "CONFIG_CFG80211_INTERNAL_REGDB" "y"
 
+  # Fix for mac80211 rate control - avoid duplicate symbol issue
+  add_kconfig_option "CONFIG_MAC80211_RC_MINSTREL" "y"
+  add_kconfig_option "CONFIG_MAC80211_RC_MINSTREL_HT" "n"  # Disable HT to avoid duplicate symbols
+  add_kconfig_option "CONFIG_MAC80211_RC_MINSTREL_VHT" "n"  # Disable VHT to avoid duplicate symbols
+  add_kconfig_option "CONFIG_MAC80211_RC_DEFAULT_MINSTREL" "y"  # Set minstrel as default to avoid conflicts
+
   # Bluetooth support
   add_kconfig_option "CONFIG_BT" "m"
   add_kconfig_option "CONFIG_BT_BREDR" "y"
