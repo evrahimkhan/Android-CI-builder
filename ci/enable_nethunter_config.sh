@@ -43,14 +43,35 @@ add_kconfig_option() {
   local option="$1"
   local value="$2"
 
+  # Validate option name to prevent injection
+  if [[ ! "$option" =~ ^CONFIG_[A-Z0-9_]+$ ]]; then
+    echo "ERROR: Invalid option name format: $option" >&2
+    return 1
+  fi
+
+  # Validate value to prevent injection
+  if [[ ! "$value" =~ ^[ymn]$ ]] && [[ ! "$value" =~ ^\".*\"$ ]] && [[ ! "$value" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+    echo "ERROR: Invalid value format: $value" >&2
+    return 1
+  fi
+
   # Check if the option already exists in the config
   if grep -q "^# ${option} is not set\\|^${option}=" kernel/out/.config; then
     # Option exists, update it
-    sed -i "s/^# ${option} is not set$/${option}=${value}/" kernel/out/.config
-    sed -i "s/^${option}=.*/${option}=${value}/" kernel/out/.config
+    sed -i "s/^# ${option} is not set$/${option}=${value}/" kernel/out/.config || {
+      echo "ERROR: Failed to update ${option} in kernel config" >&2
+      return 1
+    }
+    sed -i "s/^${option}=.*/${option}=${value}/" kernel/out/.config || {
+      echo "ERROR: Failed to update ${option} in kernel config" >&2
+      return 1
+    }
   else
     # Option doesn't exist, append it
-    echo "${option}=${value}" >> kernel/out/.config
+    echo "${option}=${value}" >> kernel/out/.config || {
+      echo "ERROR: Failed to append ${option} to kernel config" >&2
+      return 1
+    }
   fi
 }
 

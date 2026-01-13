@@ -3,6 +3,12 @@ set -euo pipefail
 
 DEFCONFIG="${1:?defconfig required}"
 
+# Validate DEFCONFIG parameter to prevent path traversal and command injection
+if [[ ! "$DEFCONFIG" =~ ^[a-zA-Z0-9/_.-]+$ ]] || [[ "$DEFCONFIG" =~ \.\. ]] || [[ "$DEFCONFIG" =~ /\* ]] || [[ "$DEFCONFIG" =~ \*/ ]]; then
+  echo "ERROR: Invalid defconfig format: $DEFCONFIG" >&2
+  exit 1
+fi
+
 # Validate GITHUB_WORKSPACE and GITHUB_ENV to prevent path traversal
 if [[ ! "$GITHUB_WORKSPACE" =~ ^/ ]]; then
   echo "ERROR: GITHUB_WORKSPACE must be an absolute path: $GITHUB_WORKSPACE" >&2

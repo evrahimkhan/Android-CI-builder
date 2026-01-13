@@ -4,25 +4,22 @@ set -euo pipefail
 MODE="${1:?mode required}"
 DEVICE="${2:-unknown}"
 
-# For start mode, we have additional parameters
+# Define all parameters with defaults to prevent unbound variable errors
+BRANCH="${3:-}"
+DEFCONFIG="${4:-}"
+
+# Skip base image parameters (5-7) as image repacking has been removed
+CUSTOM_ENABLED="${8:-false}"
+CFG_LOCALVERSION="${9:--CI}"
+CFG_DEFAULT_HOSTNAME="${10:-CI Builder}"
+CFG_UNAME_OVERRIDE_STRING="${11:-}"
+CFG_CC_VERSION_TEXT="${12:-}"
+
+# NetHunter configuration status (13th parameter for start mode, from environment for success/failure)
 if [ "$MODE" = "start" ]; then
-  BRANCH="${3:-}"
-  DEFCONFIG="${4:-}"
-  BASE_BOOT_URL="${5:-}"
-  BASE_VENDOR_BOOT_URL="${6:-}"
-  BASE_INIT_BOOT_URL="${7:-}"
-
-  CUSTOM_ENABLED="${8:-false}"
-  CFG_LOCALVERSION="${9:--CI}"
-  CFG_DEFAULT_HOSTNAME="${10:-CI Builder}"
-  CFG_UNAME_OVERRIDE_STRING="${11:-}"
-  CFG_CC_VERSION_TEXT="${12:-}"
-
-  # NetHunter configuration status (13th parameter)
   NETHUNTER_CONFIG_ENABLED="${13:-false}"
 else
-  # For success/failure modes, we only need device
-  # NetHunter status will be read from environment
+  # For success/failure modes, read from environment
   NETHUNTER_CONFIG_ENABLED="${NETHUNTER_CONFIG_ENABLED:-false}"
 fi
 
@@ -32,11 +29,24 @@ if [[ ! "$MODE" =~ ^(start|success|failure)$ ]]; then
   exit 1
 fi
 
-# Sanitize device name to prevent injection
+# Sanitize device name to prevent injection - more restrictive validation
+if [[ ! "$DEVICE" =~ ^[a-zA-Z0-9._-]+$ ]] || [[ "$DEVICE" =~ \.\. ]] || [[ "$DEVICE" =~ /\* ]] || [[ "$DEVICE" =~ \*/ ]]; then
+  echo "ERROR: Invalid device name format: $DEVICE" >&2
+  exit 1
+fi
 DEVICE=$(printf '%s\n' "$DEVICE" | sed 's/[^a-zA-Z0-9._-]/_/g')
 
-# Sanitize other inputs
+# Sanitize other inputs with similar validation
+if [[ -n "$BRANCH" ]] && ([[ ! "$BRANCH" =~ ^[a-zA-Z0-9/_.-]+$ ]] || [[ "$BRANCH" =~ \.\. ]] || [[ "$BRANCH" =~ /\* ]] || [[ "$BRANCH" =~ \*/ ]]); then
+  echo "ERROR: Invalid branch name format: $BRANCH" >&2
+  exit 1
+fi
 BRANCH=$(printf '%s\n' "$BRANCH" | sed 's/[^a-zA-Z0-9/_.-]/_/g')
+
+if [[ -n "$DEFCONFIG" ]] && ([[ ! "$DEFCONFIG" =~ ^[a-zA-Z0-9/_.-]+$ ]] || [[ "$DEFCONFIG" =~ \.\. ]] || [[ "$DEFCONFIG" =~ /\* ]] || [[ "$DEFCONFIG" =~ \*/ ]]); then
+  echo "ERROR: Invalid defconfig format: $DEFCONFIG" >&2
+  exit 1
+fi
 DEFCONFIG=$(printf '%s\n' "$DEFCONFIG" | sed 's/[^a-zA-Z0-9/_.-]/_/g')
 
 cd "${GITHUB_WORKSPACE:-$(pwd)}"
@@ -46,11 +56,26 @@ log_err() { echo "[telegram] $*" >&2; }
 
 human_size() {
   local b="$1"
+
+  # Validate input is numeric
+  if ! [[ "$b" =~ ^[0-9]+$ ]]; then
+    echo "0 B" >&2
+    return 1
+  fi
+
+  # Check for potential overflow
+  if [ "$b" -gt $((2**63 - 1)) ]; then
+    echo "Invalid size: too large" >&2
+    return 1
+  fi
+
   if [ "$b" -lt 1024 ]; then echo "${b} B"; return; fi
   local kib=$((b / 1024))
   if [ "$kib" -lt 1024 ]; then echo "${kib} KiB"; return; fi
   local mib=$((kib / 1024))
-  echo "${mib} MiB"
+  if [ "$mib" -lt 1024 ]; then echo "${mib} MiB"; return; fi
+  local gib=$((mib / 1024))
+  echo "${gib} GiB"
 }
 
 pick_latest() { ls -1t $1 2>/dev/null | head -n1 || true; }
@@ -116,9 +141,6 @@ Restore:
 }
 
 if [ "$MODE" = "start" ]; then
-  base_boot="(none)"; [ -n "$BASE_BOOT_URL" ] && base_boot="provided"
-  base_vboot="(none)"; [ -n "$BASE_VENDOR_BOOT_URL" ] && base_vboot="provided"
-  base_iboot="(none)"; [ -n "$BASE_INIT_BOOT_URL" ] && base_iboot="provided"
 
   branding="🎛 <b>Branding</b>: <code>disabled</code>"
   if [ "$CUSTOM_ENABLED" = "true" ]; then
@@ -153,14 +175,28 @@ fi
 if [ "$MODE" = "success" ]; then
   ZIP="${ZIP_NAME:-}"; [ -z "$ZIP" ] && ZIP="$(pick_latest 'Kernel-*.zip')"
 
-  # BOOTXZ, VBOOTXZ, and IBOOTXZ are not generated anymore since image repacking is disabled
-  BOOTMODE="${BOOT_IMG_MODE:-unknown}"
+  # Only AnyKernel ZIP is generated (no individual boot images)
   LOG="kernel/build.log"
 
   # Determine NetHunter configuration status from environment
   NETHUNTER_STATUS="disabled"
   if [ "${NETHUNTER_CONFIG_ENABLED:-false}" = "true" ]; then
     NETHUNTER_STATUS="enabled"
+  fi
+
+  # Get NetHunter integration verification status
+  NETHUNTER_VERIFICATION="${NETHUNTER_INTEGRATION_STATUS:-unknown}"
+  if [ "$NETHUNTER_VERIFICATION" = "not_enabled" ]; then
+    NETHUNTER_STATUS="disabled"
+  elif [ "$NETHUNTER_VERIFICATION" = "verified" ]; then
+    NETHUNTER_STATUS="enabled (verified)"
+  elif [ "$NETHUNTER_VERIFICATION" = "partial" ]; then
+    NETHUNTER_STATUS="enabled (partial)"
+  else
+    # If verification status is unknown but NetHunter was enabled, show as enabled
+    if [ "${NETHUNTER_CONFIG_ENABLED:-false}" = "true" ]; then
+      NETHUNTER_STATUS="enabled"
+    fi
   fi
 
   safe_send_msg "<b>✅ Build Succeeded</b>
