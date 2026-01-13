@@ -13,9 +13,9 @@ Android-CI-builder/
 │   ├── install_deps.sh       # Dependency installation - Sets up build environment
 │   ├── package_anykernel.sh  # AnyKernel packaging - Creates flashable ZIP
 │   ├── patch_polly.sh        # Patches unsupported Polly flags - Compiler compatibility
-│   ├── repack_images.sh      # Image repacking utilities - Creates boot images
+│   ├── (removed) repack_images.sh      # Image repacking utilities - REMOVED
 │   ├── run_logged.sh         # Wrapper for logged execution - Adds logging to commands
-│   ├── setup_aosp_mkbootimg.sh # Sets up AOSP mkbootimg - Prepares image tools
+│   ├── (removed) setup_aosp_mkbootimg.sh # Sets up AOSP mkbootimg - REMOVED
 │   ├── setup_proton_clang.sh # Sets up Proton Clang - Prepares compiler
 │   └── telegram.sh           # Telegram notification system - Sends build notifications
 ├── .github/                   # GitHub configuration
@@ -85,9 +85,9 @@ Contains the GitHub Actions workflow:
 - **Custom Kconfig Options**: Handled in `build_kernel.sh` (lines 60-120)
 
 ### Build Process Flow
-1. **Setup Phase**: `install_deps.sh` → `setup_aosp_mkbootimg.sh` → `setup_proton_clang.sh`
+1. **Setup Phase**: `install_deps.sh` → `setup_proton_clang.sh` (mkbootimg setup REMOVED)
 2. **Source Phase**: `clone_kernel.sh` (with source URL and branch)
 3. **Build Phase**: `build_kernel.sh` (with defconfig parameter)
 4. **Detection Phase**: `detect_gki.sh` (identifies kernel type)
-5. **Packaging Phase**: `package_anykernel.sh` or `repack_images.sh`
+5. **Packaging Phase**: `package_anykernel.sh` (repack_images REMOVED)
 6. **Notification Phase**: `telegram.sh` (with status updates)

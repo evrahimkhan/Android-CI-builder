@@ -73,7 +73,7 @@ The workflow accepts the following parameters when triggered manually:
 
 ## Script Command-Line Interfaces
 
-### `ci/clone_kernel.sh`
+repack_images.sh`/clone_kernel.sh`
 **Endpoint**: Command-line script
 **Method**: Execute
 **Parameters**:
@@ -87,7 +87,7 @@ The workflow accepts the following parameters when triggered manually:
 
 **Response**: Clones the kernel source to the `kernel/` directory
 
-### `ci/build_kernel.sh`
+repack_images.sh`/build_kernel.sh`
 **Endpoint**: Command-line script
 **Method**: Execute
 **Parameters**:
@@ -103,7 +103,7 @@ The workflow accepts the following parameters when triggered manually:
 - Creates build artifacts in `kernel/out/`
 - Generates `build.log` and potentially `error.log`
 
-### `ci/detect_gki.sh`
+repack_images.sh`/detect_gki.sh`
 **Endpoint**: Command-line script
 **Method**: Execute
 **Parameters**: None
@@ -111,7 +111,7 @@ The workflow accepts the following parameters when triggered manually:
 **Response**:
 - Sets environment variable: `KERNEL_TYPE` to either `"GKI"` or `"NON-GKI"`
 
-### `ci/package_anykernel.sh`
+repack_images.sh`/package_anykernel.sh`
 **Endpoint**: Command-line script
 **Method**: Execute
 **Parameters**:
@@ -122,7 +122,7 @@ The workflow accepts the following parameters when triggered manually:
 
 **Response**: Creates a flashable AnyKernel ZIP file
 
-### `ci/repack_images.sh`
+repack_images.sh`/repack_images.sh`
 **Endpoint**: Command-line script
 **Method**: Execute
 **Parameters**:

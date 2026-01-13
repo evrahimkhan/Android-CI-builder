@@ -17,7 +17,7 @@ This document catalogs all components in the Android-CI-builder project, categor
 | Component Name | File Path | Type | Description |
 |----------------|-----------|------|-------------|
 | package_anykernel | `ci/package_anykernel.sh` | Packaging Script | Creates AnyKernel flashable ZIP from built kernel |
-| repack_images | `ci/repack_images.sh` | Packaging Script | Repacks boot images with base images for safe flashing |
+| (REMOVED) repack_images | (REMOVED) `ci/repack_images.sh` | (REMOVED) | (REMOVED) |
 | ensure_anykernel_core | `ci/ensure_anykernel_core.sh` | Utility Script | Ensures AnyKernel core files exist before packaging |
 
 ### Setup Scripts
@@ -93,7 +93,7 @@ clone_kernel → (none, but kernel source required for build)
 build_kernel → detect_gki, patch_polly (indirectly)
 detect_gki → build_kernel (requires built kernel config)
 package_anykernel → build_kernel (requires built kernel)
-repack_images → build_kernel (requires built kernel)
+# repack_images → build_kernel (REQUIRES REMOVED)
 ```
 
 ### GitHub Actions Dependencies

@@ -45,7 +45,7 @@ Android-CI-builder/
 │   ├── detect_gki.sh          # GKI detection logic
 │   ├── install_deps.sh        # Dependency installation
 │   ├── package_anykernel.sh   # AnyKernel packaging
-│   ├── repack_images.sh       # Image repacking utilities
+│   ├── (removed) repack_images.sh       # Image repacking utilities - REMOVED
 │   ├── telegram.sh            # Telegram notification system
 │   └── ...                    # Additional utility scripts
 ├── .github/workflows/         # GitHub Actions workflows

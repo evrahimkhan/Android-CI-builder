@@ -104,7 +104,7 @@ See `source-tree-analysis.md` for detailed directory structure and file purposes
 3. **Source Retrieval**: Kernel cloned via `clone_kernel.sh`
 4. **Compilation**: Kernel built via `build_kernel.sh`
 5. **Detection**: GKI status determined via `detect_gki.sh`
-6. **Packaging**: Artifacts created via `package_anykernel.sh` or `repack_images.sh`
+6. **Packaging**: Artifacts created via `package_anykernel.sh` (repack_images REMOVED)
 7. **Distribution**: Artifacts uploaded via GitHub Actions
 8. **Notification**: Status sent via `telegram.sh`
 
