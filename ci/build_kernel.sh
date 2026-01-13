@@ -241,10 +241,13 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
   add_kconfig_option "CONFIG_CFG80211_INTERNAL_REGDB" "y"
 
   # Fix for mac80211 rate control - avoid duplicate symbol issue
-  add_kconfig_option "CONFIG_MAC80211_RC_MINSTREL" "y"
-  add_kconfig_option "CONFIG_MAC80211_RC_MINSTREL_HT" "n"  # Disable HT to avoid duplicate symbols
-  add_kconfig_option "CONFIG_MAC80211_RC_MINSTREL_VHT" "n"  # Disable VHT to avoid duplicate symbols
-  add_kconfig_option "CONFIG_MAC80211_RC_DEFAULT_MINSTREL" "y"  # Set minstrel as default to avoid conflicts
+  # The issue is that minstrel and minstrel_ht are being built as separate objects and linked together
+  # Solution: Disable minstrel entirely to avoid the conflict, use default algorithm
+  add_kconfig_option "CONFIG_MAC80211_RC_MINSTREL" "n"      # Disable main minstrel to avoid conflicts
+  add_kconfig_option "CONFIG_MAC80211_RC_MINSTREL_HT" "n"   # Disable HT minstrel to avoid conflicts
+  add_kconfig_option "CONFIG_MAC80211_RC_MINSTREL_VHT" "n"  # Disable VHT minstrel to avoid conflicts
+  add_kconfig_option "CONFIG_MAC80211_RC_DEFAULT" "y"       # Enable default rate control algorithm
+  # This avoids the duplicate symbol issue by not using minstrel at all
 
   # Bluetooth support
   add_kconfig_option "CONFIG_BT" "m"
