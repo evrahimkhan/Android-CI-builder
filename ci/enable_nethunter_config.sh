@@ -343,3 +343,4 @@ add_kconfig_option "CONFIG_MAGIC_SYSRQ_DEFAULT_ENABLE" "0x01b6"
 
 echo "NetHunter configurations applied successfully!"
 echo "NETHUNTER_CONFIG_ENABLED=true" >> "$GITHUB_ENV"
+echo "NETHUNTER_CONFIG_APPLIED=true" >> "$GITHUB_ENV"

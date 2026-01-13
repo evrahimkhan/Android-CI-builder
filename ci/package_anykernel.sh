@@ -27,6 +27,7 @@ BASE_INIT_BOOT_URL=""
 
 # Read NetHunter configuration status
 NETHUNTER_CONFIG_ENABLED="${NETHUNTER_CONFIG_ENABLED:-false}"
+echo "NETHUNTER_CONFIG_ENABLED=${NETHUNTER_CONFIG_ENABLED}" >> "$GITHUB_ENV"
 
 BOOTDIR="kernel/out/arch/arm64/boot"
 test -d "$BOOTDIR"
