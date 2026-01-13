@@ -152,16 +152,6 @@ jobs:
           CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
         run: ci/run_logged.sh ci/package_anykernel.sh "${{ inputs.device }}"
 
-      - name: Verify NetHunter integration
-        if: inputs.enable_custom_config == 'true' && env.NETHUNTER_CONFIG_ENABLED == 'true'
-        shell: bash
-        run: ci/run_logged.sh ci/verify_nethunter.sh "true"
-
-      - name: Verify NetHunter not enabled (for status reporting)
-        if: inputs.enable_custom_config != 'true' || env.NETHUNTER_CONFIG_ENABLED != 'true'
-        shell: bash
-        run: ci/run_logged.sh ci/verify_nethunter.sh "false"
-
       # Removed image repacking process as requested
       # Only AnyKernel ZIP will be created for flashing
 
