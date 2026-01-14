@@ -156,8 +156,8 @@ apply_custom_kconfig_branding() {
   fi
 
   set_kcfg_bool LOCALVERSION_AUTO n
-  if ! make O=out olddefconfig; then
-    # Fallback to oldconfig with yes "" if olddefconfig fails
+  if ! make O=out silentoldconfig; then
+    # Fallback to oldconfig with yes "" if silentoldconfig fails
     run_oldconfig || true
   fi
 }
@@ -165,8 +165,11 @@ apply_custom_kconfig_branding() {
 make O=out "$DEFCONFIG"
 # Use olddefconfig to automatically accept default values for new config options
 if ! make O=out olddefconfig; then
-  # Fallback to oldconfig with yes "" if olddefconfig fails
-  run_oldconfig || { echo "ERROR: oldconfig failed" > error.log; exit 0; }
+  # If olddefconfig fails, use silentoldconfig to avoid interactive prompts
+  if ! make O=out silentoldconfig; then
+    # Fallback to oldconfig with yes "" if both fail
+    run_oldconfig || { echo "ERROR: oldconfig failed" > error.log; exit 0; }
+  fi
 fi
 
 # Apply NetHunter configurations if enabled
@@ -245,6 +248,12 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
   add_kconfig_option "CONFIG_CFG80211_INTERNAL_REGDB" "y"
   add_kconfig_option "CONFIG_CFG80211_CRDA_SUPPORT" "y"
   add_kconfig_option "CONFIG_CFG80211_DEFAULT_PS" "y"
+
+  # Essential cfg80211 functions needed by qcacld driver
+  add_kconfig_option "CONFIG_CFG80211_WEXT" "y"  # Enable wext functions for legacy drivers
+  add_kconfig_option "CONFIG_CFG80211_INTERNAL_REGDB" "y"
+  add_kconfig_option "CONFIG_CFG80211_DEBUGFS" "y"
+  add_kconfig_option "CONFIG_CFG80211_CERTIFICATION_ONUS" "y"
 
   # Fix for mac80211 rate control - avoid duplicate symbol issue
   # The issue is that minstrel and minstrel_ht are being built as separate objects and linked together
@@ -820,9 +829,9 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
   echo "NETHUNTER_CONFIG_ENABLED=true" >> "$GITHUB_ENV"
   echo "NETHUNTER_CONFIG_APPLIED=true" >> "$GITHUB_ENV"
 
-  # Run olddefconfig again to ensure all new configurations are properly set
-  if ! make O=out olddefconfig; then
-    # Fallback to oldconfig with yes "" if olddefconfig fails
+  # Run silentoldconfig again to ensure all new configurations are properly set without interactive prompts
+  if ! make O=out silentoldconfig; then
+    # Fallback to oldconfig with yes "" if silentoldconfig fails
     run_oldconfig || true
   fi
 fi
