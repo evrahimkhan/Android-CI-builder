@@ -260,7 +260,6 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
 
   # Enable cfg80211 features needed by various wireless drivers
   add_kconfig_option "CONFIG_CFG80211_WEXT" "y"
-  add_kconfig_option "CONFIG_CFG80211_INTERNAL_REGDB" "y"
   add_kconfig_option "CONFIG_CFG80211_CRDA_SUPPORT" "y"
   add_kconfig_option "CONFIG_CFG80211_DEFAULT_PS" "y"
   add_kconfig_option "CONFIG_CFG80211_DEBUGFS" "y"
@@ -303,8 +302,9 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
   add_kconfig_option "CONFIG_MODULE_SIG" "n"
   add_kconfig_option "CONFIG_MODULE_SIG_FORCE" "n"
 
+
   # Enable wireless regulatory database
-  add_kconfig_option "CONFIG_CFG80211_INTERNAL_REGDB" "y"
+  # (already configured above)
 
   # Enable rfkill for wireless kill switch support
   add_kconfig_option "CONFIG_RFKILL" "m"
