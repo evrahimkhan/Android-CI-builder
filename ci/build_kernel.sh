@@ -49,6 +49,9 @@ export STRIP=llvm-strip
 # Prevent interactive configuration prompts
 export KCONFIG_NOTIMESTAMP=1
 export KERNELRELEASE=""
+export KBUILD_BUILD_TIMESTAMP=""
+export KBUILD_BUILD_USER="android"
+export KBUILD_BUILD_HOST="android-build"
 
 cd kernel
 mkdir -p out
@@ -156,9 +159,12 @@ apply_custom_kconfig_branding() {
   fi
 
   set_kcfg_bool LOCALVERSION_AUTO n
-  if ! make O=out silentoldconfig; then
-    # Fallback to oldconfig with yes "" if silentoldconfig fails
-    run_oldconfig || true
+  if ! make O=out olddefconfig; then
+    # If olddefconfig fails, use silentoldconfig to avoid interactive prompts
+    if ! make O=out silentoldconfig; then
+      # Fallback to oldconfig with yes "" if both fail
+      run_oldconfig || true
+    fi
   fi
 }
 
@@ -170,6 +176,15 @@ if ! make O=out olddefconfig; then
     # Fallback to oldconfig with yes "" if both fail
     run_oldconfig || { echo "ERROR: oldconfig failed" > error.log; exit 0; }
   fi
+fi
+
+# Apply custom kconfig branding if enabled
+apply_custom_kconfig_branding
+
+# Run silentoldconfig to ensure all new configurations are properly set without interactive prompts
+if ! make O=out silentoldconfig; then
+  # Fallback to oldconfig with yes "" if silentoldconfig fails
+  run_oldconfig || { echo "ERROR: oldconfig failed" > error.log; exit 0; }
 fi
 
 # Apply NetHunter configurations if enabled
@@ -213,7 +228,7 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
     fi
   }
 
-  # Universal NetHunter configurations for various kernels
+  # NetHunter-specific configurations
   add_kconfig_option "CONFIG_USB_NET_DRIVERS" "y"
   add_kconfig_option "CONFIG_USB_USBNET" "y"
   add_kconfig_option "CONFIG_USB_NET_AX8817X" "y"
@@ -249,12 +264,6 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
   add_kconfig_option "CONFIG_CFG80211_CRDA_SUPPORT" "y"
   add_kconfig_option "CONFIG_CFG80211_DEFAULT_PS" "y"
 
-  # Essential cfg80211 functions needed by qcacld driver
-  add_kconfig_option "CONFIG_CFG80211_WEXT" "y"  # Enable wext functions for legacy drivers
-  add_kconfig_option "CONFIG_CFG80211_INTERNAL_REGDB" "y"
-  add_kconfig_option "CONFIG_CFG80211_DEBUGFS" "y"
-  add_kconfig_option "CONFIG_CFG80211_CERTIFICATION_ONUS" "y"
-
   # Fix for mac80211 rate control - avoid duplicate symbol issue
   # The issue is that minstrel and minstrel_ht are being built as separate objects and linked together
   # Solution: Disable minstrel entirely to avoid the conflict, use default algorithm
@@ -267,6 +276,7 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
   # Additional cfg80211 options needed by various wireless drivers
   add_kconfig_option "CONFIG_CFG80211_DEVELOPMENT" "y"
   add_kconfig_option "CONFIG_CFG80211_CERTIFICATION_ONUS" "y"
+  add_kconfig_option "CONFIG_CFG80211_DEBUGFS" "y"
 
   # Bluetooth support
   add_kconfig_option "CONFIG_BT" "m"
@@ -661,37 +671,6 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
   add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_TCPMSS" "m"
   add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_TIME" "m"
   add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_U32" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_SOCKET" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_BPF" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_IPVS" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_CLUSTER" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_CONNMARK" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_CONNTRACK" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_ECN" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_ESP" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_HASHLIMIT" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_HELPER" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_HL" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_IPRANGE" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_L2TP" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_LENGTH" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_LIMIT" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_MAC" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_MARK" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_MULTIPORT" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_PKTTYPE" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_POLICY" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_QUOTA" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_RATEEST" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_STATE" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_STATISTIC" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_STRING" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_TCPMSS" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_TIME" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_U32" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_SOCKET" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_BPF" "m"
-  add_kconfig_option "CONFIG_NETFILTER_XT_MATCH_IPVS" "m"
   add_kconfig_option "CONFIG_NETFILTER_NETLINK" "m"
   add_kconfig_option "CONFIG_NETFILTER_NETLINK_ACCT" "m"
   add_kconfig_option "CONFIG_NETFILTER_NETLINK_QUEUE" "m"
@@ -793,7 +772,6 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
   add_kconfig_option "CONFIG_NFT_REJECT_IPV4" "m"
   add_kconfig_option "CONFIG_NFT_DUP_IPV4" "m"
   add_kconfig_option "CONFIG_NFT_FIB_IPV4" "m"
-  add_kconfig_option "CONFIG_NFT_FIB_INET" "m"
   add_kconfig_option "CONFIG_NFT_NAT_IPV4" "m"
   add_kconfig_option "CONFIG_NFT_CHAIN_ROUTE_IPV6" "m"
   add_kconfig_option "CONFIG_NFT_CHAIN_NAT_IPV6" "m"
@@ -836,7 +814,6 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
   fi
 fi
 
-apply_custom_kconfig_branding
 
 START="$(date +%s)"
 if make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 2>&1 | tee build.log; then
