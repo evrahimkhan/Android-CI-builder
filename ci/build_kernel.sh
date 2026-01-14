@@ -263,27 +263,9 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
   add_kconfig_option "CONFIG_CFG80211_INTERNAL_REGDB" "y"
   add_kconfig_option "CONFIG_CFG80211_CRDA_SUPPORT" "y"
   add_kconfig_option "CONFIG_CFG80211_DEFAULT_PS" "y"
-
-  # Fix for mac80211 rate control - avoid duplicate symbol issue
-  # The issue is that minstrel and minstrel_ht are being built as separate objects and linked together
-  # Solution: Disable minstrel entirely to avoid the conflict, use default algorithm
-  add_kconfig_option "CONFIG_MAC80211_RC_MINSTREL" "n"      # Disable main minstrel to avoid conflicts
-  add_kconfig_option "CONFIG_MAC80211_RC_MINSTREL_HT" "n"   # Disable HT minstrel to avoid conflicts
-  add_kconfig_option "CONFIG_MAC80211_RC_MINSTREL_VHT" "n"  # Disable VHT minstrel to avoid conflicts
-  add_kconfig_option "CONFIG_MAC80211_RC_DEFAULT" "y"       # Enable default rate control algorithm
-  # This avoids the duplicate symbol issue by not using minstrel at all
-
-  # Additional cfg80211 options needed by various wireless drivers
+  add_kconfig_option "CONFIG_CFG80211_DEBUGFS" "y"
   add_kconfig_option "CONFIG_CFG80211_DEVELOPMENT" "y"
   add_kconfig_option "CONFIG_CFG80211_CERTIFICATION_ONUS" "y"
-  add_kconfig_option "CONFIG_CFG80211_DEBUGFS" "y"
-
-  # Bluetooth support
-  add_kconfig_option "CONFIG_BT" "m"
-  add_kconfig_option "CONFIG_BT_BREDR" "y"
-  add_kconfig_option "CONFIG_BT_HCIBTUSB" "m"
-  add_kconfig_option "CONFIG_BT_HCIUART" "m"
-  add_kconfig_option "CONFIG_BT_HCIUART_BCSP" "y"
   add_kconfig_option "CONFIG_BT_HCIUART_LL" "y"
   add_kconfig_option "CONFIG_BT_HCIUART_3WIRE" "y"
   add_kconfig_option "CONFIG_BT_HCIUART_H4" "y"
@@ -293,22 +275,6 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
   add_kconfig_option "CONFIG_NFC_NCI" "m"
   add_kconfig_option "CONFIG_NFC_DIGITAL" "m"
   add_kconfig_option "CONFIG_NFC_LLCP" "m"
-
-  # Enable debugfs for monitoring
-  add_kconfig_option "CONFIG_DEBUG_FS" "y"
-
-  # Enable overlay filesystem (needed for chroot environments)
-  add_kconfig_option "CONFIG_OVERLAY_FS" "m"
-
-  # Enable FUSE (for filesystem in userspace)
-  add_kconfig_option "CONFIG_FUSE_FS" "m"
-
-  # Enable binderfs (for Android binderfs functionality)
-  add_kconfig_option "CONFIG_ANDROID_BINDERFS" "y"
-  add_kconfig_option "CONFIG_ANDROID_BINDER_DEVICES" '"binder,hwbinder,vndbinder"'
-
-  # Enable SELinux support (keeping security but allowing development features)
-  add_kconfig_option "CONFIG_SECURITY_SELINUX" "y"
   # NOTE: SELINUX_DEVELOP increases security risk - only enable if needed
   # add_kconfig_option "CONFIG_SECURITY_SELINUX_DEVELOP" "y"
 
