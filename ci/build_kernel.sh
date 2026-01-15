@@ -314,6 +314,7 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
   # Enable LED triggers for wireless
   add_kconfig_option "CONFIG_LEDS_TRIGGER_PHY" "y"
 
+
   # Enable USB serial support
   add_kconfig_option "CONFIG_USB_SERIAL" "y"
   add_kconfig_option "CONFIG_USB_SERIAL_GENERIC" "y"
