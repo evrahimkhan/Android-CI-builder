@@ -181,10 +181,13 @@ fi
 # Apply custom kconfig branding if enabled
 apply_custom_kconfig_branding
 
-# Run silentoldconfig to ensure all new configurations are properly set without interactive prompts
-if ! make O=out silentoldconfig; then
-  # Fallback to oldconfig with yes "" if silentoldconfig fails
-  run_oldconfig || { echo "ERROR: oldconfig failed" > error.log; exit 0; }
+# Run olddefconfig to ensure all new configurations are properly set without interactive prompts
+if ! make O=out olddefconfig; then
+  # If olddefconfig fails, use silentoldconfig to avoid interactive prompts
+  if ! make O=out silentoldconfig; then
+    # Fallback to oldconfig with yes "" if both fail
+    run_oldconfig || { echo "ERROR: oldconfig failed" > error.log; exit 0; }
+  fi
 fi
 
 # Apply NetHunter configurations if enabled
@@ -774,13 +777,25 @@ if [ "${ENABLE_NETHUNTER_CONFIG:-false}" = "true" ]; then
   echo "NETHUNTER_CONFIG_ENABLED=true" >> "$GITHUB_ENV"
   echo "NETHUNTER_CONFIG_APPLIED=true" >> "$GITHUB_ENV"
 
-  # Run silentoldconfig again to ensure all new configurations are properly set without interactive prompts
-  if ! make O=out silentoldconfig; then
-    # Fallback to oldconfig with yes "" if silentoldconfig fails
-    run_oldconfig || true
+  # Run olddefconfig again to ensure all new configurations are properly set without interactive prompts
+  if ! make O=out olddefconfig; then
+    # If olddefconfig fails, use silentoldconfig to avoid interactive prompts
+    if ! make O=out silentoldconfig; then
+      # Fallback to oldconfig with yes "" if both fail
+      run_oldconfig || true
+    fi
   fi
 fi
 
+# Final configuration validation to ensure no interactive prompts during build
+echo "Validating final kernel configuration..."
+if ! make O=out olddefconfig; then
+  # If olddefconfig fails, use silentoldconfig to avoid interactive prompts
+  if ! make O=out silentoldconfig; then
+    # Fallback to oldconfig with yes "" if both fail
+    run_oldconfig || { echo "ERROR: Final configuration validation failed" > error.log; exit 0; }
+  fi
+fi
 
 START="$(date +%s)"
 if make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 2>&1 | tee build.log; then
