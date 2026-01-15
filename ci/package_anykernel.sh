@@ -68,7 +68,7 @@ KSTR="✨ ${DEVICE} • Linux ${KERNEL_VERSION:-unknown} • CI ${GITHUB_RUN_ID}
 KSTR_ESC=$(printf '%s\n' "$KSTR" | sed 's/[[\.*^$()+?{|]/\\&/g; s/&/\\&/g; s/\//\\\//g; s/\n/\\n/g')
 
 # Validate that the sanitized string doesn't contain problematic sequences
-if [[ "$KSTR_ESC" =~ \$\(|\`\(|sh\(|bash\(|\|.*\>|>>.*\> ]]; then
+if [[ "$KSTR_ESC" =~ \$\(|\`\(|sh\(|bash\(|\|.*\>|.*>>.* ]]; then
   echo "ERROR: Sanitized string contains potentially dangerous sequences" >&2
   exit 1
 fi
