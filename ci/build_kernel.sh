@@ -789,6 +789,17 @@ fi
 
 # Final configuration validation to ensure no interactive prompts during build
 echo "Validating final kernel configuration..."
+
+# Disable DTBO build if mkdtimg is not available to prevent build failure
+if ! command -v mkdtimg &> /dev/null; then
+    echo "WARNING: mkdtimg not found, disabling DTBO build to prevent failure"
+    # Add configuration to disable DTBO image creation if it exists
+    if [ -f "out/.config" ]; then
+        sed -i 's/CONFIG_BUILD_ARM64_DT_OVERLAY=y/# CONFIG_BUILD_ARM64_DT_OVERLAY is not set/g' out/.config || true
+        sed -i 's/CONFIG_ARM64_DT_OVERLAY=y/# CONFIG_ARM64_DT_OVERLAY is not set/g' out/.config || true
+    fi
+fi
+
 if ! make O=out olddefconfig; then
   # If olddefconfig fails, use silentoldconfig to avoid interactive prompts
   if ! make O=out silentoldconfig; then
