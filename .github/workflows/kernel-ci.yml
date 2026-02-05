@@ -12,6 +12,7 @@ on:
         description: Kernel branch
         required: true
         type: string
+        pattern: ^[a-zA-Z0-9/_.-]+$
       device:
         description: Device codename (for naming only)
         required: true

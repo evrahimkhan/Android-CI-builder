@@ -51,8 +51,7 @@ check_config_exists() {
   
   # Also check if it's already in .config (may be from defconfig)
   if [ -f "$KERNEL_DIR/out/.config" ]; then
-    if grep -qE "^#?\s*CONFIG_${config_name}[=
-]" "$KERNEL_DIR/out/.config" 2>/dev/null; then
+    if grep -qE "^#?\s*CONFIG_${config_name}=" "$KERNEL_DIR/out/.config" 2>/dev/null; then
       return 0  # Config exists in .config
     fi
   fi

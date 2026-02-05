@@ -101,9 +101,11 @@ safe_send_doc_auto() {
   local caption="$2"
   [ -f "$path" ] || return 0
 
+  # Telegram bot API limit is 50MB, use 45MB to leave room for overhead
   local size max hsz
   size="$(stat -c%s "$path" 2>/dev/null || echo 0)"
-  max=$((45 * 1024 * 1024))
+  local TELEGRAM_MAX_DOC_SIZE=$((45 * 1024 * 1024))  # 45MB limit
+  max="${TELEGRAM_MAX_DOC_SIZE}"
   hsz="$(human_size "$size")"
 
   if [ "$size" -le "$max" ]; then
@@ -117,7 +119,7 @@ safe_send_doc_auto() {
   prefix="${dir}/${base}.part-"
 
   rm -f "${prefix}"* 2>/dev/null || true
-  split -b "${max}" -d -a 2 "$path" "${prefix}" || return 0
+  timeout 300 split -b "${max}" -d -a 2 "$path" "${prefix}" || return 0
 
   safe_send_msg "<b>📦 Large file</b>
 <code>${base}</code> is <code>${hsz}</code>.

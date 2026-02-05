@@ -202,10 +202,26 @@ apply_nethunter_config() {
   
   # Source the NetHunter config script
   if [ -f "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" ]; then
+    # Use separate temp log to avoid race condition
+    local nethunter_log="nethunter-config-$$.log"
     # Export functions so they're available to the sourced script
     export -f set_kcfg_str set_kcfg_bool cfg_tool 2>/dev/null || true
     if ! bash "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" 2>&1 | tee -a "$nethunter_log"; then
       echo "Warning: NetHunter config script execution had issues" >&2
+    fi
+    
+    echo ""
+    echo "Resolving NetHunter configuration dependencies..."
+    if ! make O=out olddefconfig 2>&1 | tee -a "$nethunter_log"; then
+      if ! make O=out silentoldconfig 2>&1 | tee -a "$nethunter_log"; then
+        yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a "$nethunter_log" || true
+      fi
+    fi
+    
+    # Append to main build log and cleanup
+    if [ -f "$nethunter_log" ]; then
+      cat "$nethunter_log" >> build.log 2>/dev/null || true
+      rm -f "$nethunter_log"
     fi
   else
     echo "Warning: NetHunter config script not found at ${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh"

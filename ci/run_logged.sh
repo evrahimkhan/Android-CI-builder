@@ -22,7 +22,8 @@ ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
 echo "===== [$(ts)] RUN: $*" | tee -a "$LOG"
 
 set +e
-(eval "$@") 2>&1 | tee -a "$LOG"
+# Use eval with proper quoting to safely execute commands
+eval "$@" 2>&1 | tee -a "$LOG"
 rc="${PIPESTATUS[0]}"
 set -e
 
