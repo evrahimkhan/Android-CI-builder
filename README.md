@@ -21,8 +21,8 @@ This project builds Android kernels and creates AnyKernel flashable ZIP files fo
 1. Navigate to your forked repository
 2. Go to Settings > Secrets and Variables > Actions
 3. Add the following secrets (optional):
-   - `TG_TOKEN`: Telegram bot token for notifications (optional)
-   - `TG_CHAT_ID`: Telegram chat ID for notifications (optional)
+   - `TG_TOKEN`: Telegram bot token for notifications and direct file upload (optional)
+   - `TG_CHAT_ID`: Telegram chat ID for notifications and direct file upload (optional)
 4. Go to Actions tab and enable workflows for your repository
 5. Ensure GitHub Actions are enabled in your repository settings
 
