@@ -195,8 +195,9 @@ apply_nethunter_config() {
     export -f set_kcfg_str set_kcfg_bool cfg_tool 2>/dev/null || true
     
     # Change to kernel directory and run the script
+    # Kernel is cloned into 'kernel/' subdirectory by ci/clone_kernel.sh
     (
-      export KERNEL_DIR="."
+      export KERNEL_DIR="kernel"
       cd "${GITHUB_WORKSPACE}"
       bash "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh"
     )
