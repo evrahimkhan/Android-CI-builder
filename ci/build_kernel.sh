@@ -34,8 +34,9 @@ export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
 
 echo "SUCCESS=0" >> "$GITHUB_ENV"
 
-ccache -M 5G || true
-ccache -z || true
+# Configure ccache with 5GB maximum cache size for faster rebuilds
+ccache -M 5G || echo "Warning: ccache configuration failed, continuing without cache" >&2
+ccache -z || echo "Warning: ccache zero stats failed, continuing" >&2
 
 export CC="ccache clang"
 export CXX="ccache clang++"
@@ -229,22 +230,6 @@ apply_nethunter_config() {
   fi
   
   echo ""
-  echo "Resolving NetHunter configuration dependencies..."
-  # Use separate temp log to avoid race condition
-  local nethunter_log="nethunter-config-$$.log"
-  if ! make O=out olddefconfig 2>&1 | tee -a "$nethunter_log"; then
-    if ! make O=out silentoldconfig 2>&1 | tee -a "$nethunter_log"; then
-      yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a "$nethunter_log" || true
-    fi
-  fi
-  
-  # Append to main build log and cleanup
-  if [ -f "$nethunter_log" ]; then
-    cat "$nethunter_log" >> build.log 2>/dev/null || true
-    rm -f "$nethunter_log"
-  fi
-  
-  echo ""
   echo "=============================================="
   echo "NetHunter configuration applied"
   echo "=============================================="
@@ -270,7 +255,7 @@ if make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 2>&1 | tee build.log; then
   echo "SUCCESS=1" >> "$GITHUB_ENV"
 else
   echo "SUCCESS=0" >> "$GITHUB_ENV"
-  cp -f build.log error.log
+  cp -f build.log "${GITHUB_WORKSPACE}/kernel/error.log" 2>/dev/null || true
 fi
 END="$(date +%s)"
 echo "BUILD_TIME=$((END-START))" >> "$GITHUB_ENV"
@@ -282,7 +267,6 @@ printf "CLANG_VERSION=%s\n" "${CLANG_VER:-unknown}" >> "$GITHUB_ENV"
 
 mkdir -p "${GITHUB_WORKSPACE}/kernel" || true
 cat build.log >> "${GITHUB_WORKSPACE}/kernel/build.log" 2>/dev/null || true
-[ -f error.log ] && cat error.log >> "${GITHUB_WORKSPACE}/kernel/error.log" 2>/dev/null || true
 
 ccache -s || true
 exit 0

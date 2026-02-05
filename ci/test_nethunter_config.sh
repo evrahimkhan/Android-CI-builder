@@ -63,10 +63,10 @@ assert_true() {
   shift
   if "$@"; then
     echo "✓ PASS: $msg"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: $msg"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
 }
 
@@ -75,10 +75,10 @@ assert_false() {
   shift
   if ! "$@"; then
     echo "✓ PASS: $msg"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: $msg"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
 }
 
@@ -89,12 +89,12 @@ assert_equals() {
   
   if [ "$expected" = "$actual" ]; then
     echo "✓ PASS: $msg"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: $msg"
     echo "  Expected: '$expected'"
     echo "  Actual:   '$actual'"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
 }
 

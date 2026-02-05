@@ -17,10 +17,12 @@ on:
         description: Device codename (for naming only)
         required: true
         type: string
+        pattern: ^[a-zA-Z0-9_-]+$
       defconfig:
         description: Kernel defconfig (e.g. vendor/moonstone_defconfig)
         required: true
         type: string
+        pattern: ^[a-zA-Z0-9/_.-]+$
 
       enable_custom_config:
         description: Enable custom Kconfig branding
