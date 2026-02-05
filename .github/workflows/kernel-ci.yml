@@ -104,17 +104,36 @@ jobs:
         shell: bash
         run: ci/run_logged.sh ci/clone_kernel.sh "${{ inputs.kernel_source }}" "${{ inputs.kernel_branch }}"
 
-      - name: Patch unsupported Polly flags
-        shell: bash
-        run: ci/run_logged.sh ci/patch_polly.sh
-
       - name: Telegram Build Start
         if: ${{ env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
         run: ci/telegram.sh start "${{ inputs.device }}" "${{ inputs.kernel_branch }}" "${{ inputs.defconfig }}" "" "" "" "${{ inputs.enable_custom_config }}" "${{ inputs.config_localversion }}" "${{ inputs.config_default_hostname }}" "${{ inputs.config_uname_override_string }}" "${{ inputs.config_cc_version_text }}"
 
+      - name: Build Kernel (First Attempt)
+        id: build_first
+        shell: bash
+        env:
+          CUSTOM_CONFIG_ENABLED: ${{ inputs.enable_custom_config }}
+          CFG_LOCALVERSION: ${{ inputs.config_localversion }}
+          CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
+          CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
+          CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
+        run: |
+          if ci/run_logged.sh ci/build_kernel.sh "${{ inputs.defconfig }}"; then
+            echo "FIRST_BUILD_SUCCESS=true" >> "$GITHUB_ENV"
+          else
+            echo "FIRST_BUILD_SUCCESS=false" >> "$GITHUB_ENV"
+            echo "First build attempt failed, will try patching Polly flags and retrying..."
+          fi
 
-      - name: Build Kernel
+      - name: Patch unsupported Polly flags (on build failure)
+        if: env.FIRST_BUILD_SUCCESS == 'false'
+        shell: bash
+        run: ci/run_logged.sh ci/patch_polly.sh
+
+      - name: Build Kernel (Retry After Polly Patch)
+        if: env.FIRST_BUILD_SUCCESS == 'false'
+        id: build_retry
         shell: bash
         env:
           CUSTOM_CONFIG_ENABLED: ${{ inputs.enable_custom_config }}
