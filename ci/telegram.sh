@@ -200,10 +200,16 @@ if [ "$MODE" = "failure" ]; then
   LOG="kernel/build.log"
   [ -f "$ERR" ] || cp -f "$LOG" "$ERR" 2>/dev/null || true
 
+  nethunter_fail_info=""
+  if [ "${NETHUNTER_ENABLED:-false}" = "true" ]; then
+    nethunter_fail_info="🛡️ <b>NetHunter</b>: <code>${NETHUNTER_CONFIG_LEVEL:-basic}</code>
+"
+  fi
+
   safe_send_msg "<b>❌ Build Failed</b>
 ━━━━━━━━━━━━━━━━━━━━
 📱 <b>Device</b>: <code>${DEVICE}</code>
-
+${nethunter_fail_info}
 📎 Sending error log…"
 
   safe_send_doc_auto "$ERR" "🧯 <b>error.log</b> • <code>${DEVICE}</code>"

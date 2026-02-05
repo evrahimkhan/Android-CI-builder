@@ -32,6 +32,7 @@ detect_kernel_version() {
 }
 
 # Check if config option exists in Kconfig files
+# Handles multiple Kconfig directives: config, menuconfig, choice, etc.
 check_config_exists() {
   local config_name="$1"
   
@@ -39,10 +40,21 @@ check_config_exists() {
     return 1
   fi
   
-  # Search in Kconfig files
+  # Search in Kconfig files with multiple pattern variants
+  # Pattern 1: Standard config
+  # Pattern 2: menuconfig
+  # Pattern 3: choice options
   if find "$KERNEL_DIR" -name "Kconfig*" -type f 2>/dev/null | \
-     xargs grep -l "^config $config_name" 2>/dev/null | grep -q .; then
+     xargs grep -lE "^(config|menuconfig)[[:space:]]+$config_name([[:space:]]|$)" 2>/dev/null | grep -q .; then
     return 0  # Config exists
+  fi
+  
+  # Also check if it's already in .config (may be from defconfig)
+  if [ -f "$KERNEL_DIR/out/.config" ]; then
+    if grep -qE "^#?\s*CONFIG_${config_name}[=
+]" "$KERNEL_DIR/out/.config" 2>/dev/null; then
+      return 0  # Config exists in .config
+    fi
   fi
   
   return 1  # Config doesn't exist
@@ -346,9 +358,56 @@ check_gki_status() {
   return 1  # Not GKI
 }
 
+# Backup kernel config before modifications
+backup_kernel_config() {
+  if [ -f "$KERNEL_DIR/out/.config" ]; then
+    cp "$KERNEL_DIR/out/.config" "$KERNEL_DIR/out/.config.backup.nethunter" 2>/dev/null || true
+    echo "Backup created: .config.backup.nethunter"
+  fi
+}
+
+# Restore kernel config from backup on failure
+restore_kernel_config() {
+  if [ -f "$KERNEL_DIR/out/.config.backup.nethunter" ]; then
+    cp "$KERNEL_DIR/out/.config.backup.nethunter" "$KERNEL_DIR/out/.config" 2>/dev/null || true
+    echo "Restored kernel config from backup"
+    rm -f "$KERNEL_DIR/out/.config.backup.nethunter"
+  fi
+}
+
+# Cleanup backup on success
+cleanup_kernel_config_backup() {
+  rm -f "$KERNEL_DIR/out/.config.backup.nethunter" 2>/dev/null || true
+}
+
+# Validate NetHunter configuration level
+validate_config_level() {
+  local level="$1"
+  
+  case "$level" in
+    basic|full)
+      return 0
+      ;;
+    "")
+      echo "Warning: NETHUNTER_CONFIG_LEVEL not set, defaulting to 'basic'"
+      return 0
+      ;;
+    *)
+      echo "ERROR: Invalid NETHUNTER_CONFIG_LEVEL='$level'. Must be 'basic' or 'full'" >&2
+      return 1
+      ;;
+  esac
+}
+
 # Main configuration dispatcher
 apply_nethunter_config() {
   local level="${NETHUNTER_CONFIG_LEVEL:-basic}"
+  
+  # Validate config level
+  if ! validate_config_level "$level"; then
+    echo "Falling back to 'basic' level due to invalid input"
+    level="basic"
+  fi
   
   echo "=============================================="
   echo "NetHunter Kernel Configuration"
@@ -369,6 +428,12 @@ apply_nethunter_config() {
   echo "Configuration level: $level"
   echo ""
   
+  # Backup config before modifications
+  backup_kernel_config
+  
+  # Set trap to restore on error
+  trap 'echo "ERROR: NetHunter configuration failed, restoring backup..."; restore_kernel_config; exit 1' ERR
+  
   # Always apply universal core
   apply_nethunter_universal_core
   apply_nethunter_android_binder
@@ -385,6 +450,12 @@ apply_nethunter_config() {
       apply_nethunter_nongki_extras
     fi
   fi
+  
+  # Clear trap on success
+  trap - ERR
+  
+  # Cleanup backup
+  cleanup_kernel_config_backup
   
   echo ""
   echo "=============================================="

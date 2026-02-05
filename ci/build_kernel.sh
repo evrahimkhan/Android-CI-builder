@@ -207,10 +207,18 @@ apply_nethunter_config() {
   
   # Run olddefconfig to resolve dependencies
   echo "Resolving NetHunter configuration dependencies..."
-  if ! make O=out olddefconfig 2>&1 | tee -a build.log; then
-    if ! make O=out silentoldconfig 2>&1 | tee -a build.log; then
+  # Use separate temp log to avoid race condition with main build
+  local nethunter_log="nethunter-config-${$}-$(date +%s).log"
+  if ! make O=out olddefconfig 2>&1 | tee -a "$nethunter_log"; then
+    if ! make O=out silentoldconfig 2>&1 | tee -a "$nethunter_log"; then
       run_oldconfig || true
     fi
+  fi
+  
+  # Append to main build log and cleanup
+  if [ -f "$nethunter_log" ]; then
+    cat "$nethunter_log" >> build.log 2>/dev/null || true
+    rm -f "$nethunter_log"
   fi
 }
 

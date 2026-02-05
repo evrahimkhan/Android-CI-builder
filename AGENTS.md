@@ -50,10 +50,34 @@ ci/patch_polly.sh
 
 # Detect GKI kernel
 ci/detect_gki.sh
+
+# Apply NetHunter kernel configuration
+ci/apply_nethunter_config.sh
+
+# Test NetHunter configuration
+ci/test_nethunter_config.sh
 ```
 
 ### Running Single Tests
-This project does not have traditional unit tests. Build success/failure serves as validation:
+
+#### NetHunter Configuration Tests
+A comprehensive test suite is available for NetHunter configuration:
+```bash
+# Run NetHunter configuration test suite
+bash ci/test_nethunter_config.sh
+
+# The test suite includes:
+# - Config existence checks
+# - Config level validation (basic/full)
+# - Safe config setters
+# - GKI detection
+# - Backup/restore functionality
+# - Integration tests
+# - Edge cases (invalid inputs, missing directories)
+```
+
+#### Kernel Build Tests
+Traditional build validation:
 ```bash
 # Test kernel build (run from kernel directory)
 make O=out <defconfig> && make -j$(nproc) O=out LLVM=1 LLVM_IAS=1

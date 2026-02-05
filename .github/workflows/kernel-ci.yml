@@ -90,6 +90,13 @@ jobs:
           set -euo pipefail
           chmod +x ci/*.sh
 
+      - name: Run NetHunter Config Tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Running NetHunter configuration test suite..."
+          bash ci/test_nethunter_config.sh
+
       - name: Install dependencies
         shell: bash
         run: ci/run_logged.sh ci/install_deps.sh
@@ -212,11 +219,17 @@ jobs:
       - name: Telegram Success
         if: ${{ env.SUCCESS == '1' && env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
+        env:
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: ci/telegram.sh success "${{ inputs.device }}"
 
       - name: Telegram Failure
         if: ${{ env.SUCCESS == '0' && env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
+        env:
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: ci/telegram.sh failure "${{ inputs.device }}"
 
       - name: Mark workflow failed if kernel build failed

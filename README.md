@@ -68,6 +68,30 @@ The configuration automatically detects your kernel version and applies only com
 
 **Note**: Full configuration may increase kernel size. Use basic level for devices with limited storage.
 
+#### Troubleshooting NetHunter Configuration
+
+**Build fails after enabling NetHunter:**
+1. Check `build.log` for "NetHunter configuration" messages
+2. Look for "Notice: CONFIG_XXX not available" - these are skipped configs (normal behavior)
+3. If kernel fails to compile, try "basic" level instead of "full"
+4. Check your kernel version compatibility (4.x, 5.x, 6.x)
+
+**How to verify configs were applied:**
+1. Download the build artifact and extract `build.log`
+2. Search for "NetHunter Kernel Configuration" to find the config section
+3. Check for "Detected kernel version" message
+4. Look for "GKI kernel detected" or "Non-GKI kernel detected"
+
+**Configs being skipped ("not available"):**
+- This is normal behavior for universal compatibility
+- The script automatically skips configs not present in your kernel version
+- Check `build.log` for full list of applied vs skipped configs
+
+**GKI 2.0 kernel (5.10+) limitations:**
+- Some USB gadget functions are skipped (handled as vendor modules)
+- Use "full" level for maximum compatibility
+- Check device-specific vendor module requirements
+
 ### Understanding the Build Process
 - The workflow will clone your kernel source and build it using Proton Clang
 - It will create an AnyKernel flashable ZIP file
