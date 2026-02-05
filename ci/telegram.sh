@@ -144,6 +144,12 @@ if [ "$MODE" = "start" ]; then
 • CC_VERSION_TEXT: <code>${CFG_CC_VERSION_TEXT:-auto}</code>"
   fi
 
+  nethunter="🛡️ <b>NetHunter</b>: <code>disabled</code>"
+  if [ "${NETHUNTER_ENABLED:-false}" = "true" ]; then
+    nethunter="🛡️ <b>NetHunter</b>: <code>enabled</code>
+• Level: <code>${NETHUNTER_CONFIG_LEVEL:-basic}</code>"
+  fi
+
   safe_send_msg "<b>🚀 Kernel Build Started</b>
 ━━━━━━━━━━━━━━━━━━━━
 📱 <b>Device</b>: <code>${DEVICE}</code>
@@ -151,6 +157,8 @@ if [ "$MODE" = "start" ]; then
 ⚙️ <b>Defconfig</b>: <code>${DEFCONFIG}</code>
 
 ${branding}
+
+${nethunter}
 
 ⏳ Compiling…
 Note: Only AnyKernel ZIP will be generated (no individual boot images)"
@@ -163,6 +171,12 @@ if [ "$MODE" = "success" ]; then
   # Only AnyKernel ZIP is generated (no individual boot images)
   LOG="kernel/build.log"
 
+  nethunter_info=""
+  if [ "${NETHUNTER_ENABLED:-false}" = "true" ]; then
+    nethunter_info="🛡️ <b>NetHunter</b>: <code>${NETHUNTER_CONFIG_LEVEL:-basic}</code>
+"
+  fi
+
   safe_send_msg "<b>✅ Build Succeeded</b>
 ━━━━━━━━━━━━━━━━━━━━
 📱 <b>Device</b>: <code>${DEVICE}</code>
@@ -170,7 +184,7 @@ if [ "$MODE" = "success" ]; then
 🐧 <b>Linux</b>: <code>${KERNEL_VERSION:-unknown}</code>
 🛠 <b>Clang</b>: <code>${CLANG_VERSION:-unknown}</code>
 ⏱ <b>Time</b>: <code>${BUILD_TIME:-0}s</code>
-
+${nethunter_info}
 📦 Uploading artifacts…"
 
   [ -n "$ZIP" ] && safe_send_doc_auto "$ZIP" "📦 <b>AnyKernel ZIP</b> • <code>${DEVICE}</code>"

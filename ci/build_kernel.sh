@@ -181,6 +181,41 @@ fi
 # Apply custom kconfig branding if enabled
 apply_custom_kconfig_branding
 
+# Apply NetHunter configuration if enabled
+apply_nethunter_config() {
+  if [ "${NETHUNTER_ENABLED:-false}" != "true" ]; then
+    return 0
+  fi
+  
+  echo "Applying NetHunter kernel configuration..."
+  
+  # Source the NetHunter config script
+  if [ -f "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" ]; then
+    # Export functions so they're available to the sourced script
+    export -f set_kcfg_str set_kcfg_bool cfg_tool 2>/dev/null || true
+    
+    # Change to kernel directory and run the script
+    (
+      export KERNEL_DIR="."
+      cd "${GITHUB_WORKSPACE}"
+      bash "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh"
+    )
+  else
+    echo "Warning: NetHunter config script not found at ${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh"
+    return 0
+  fi
+  
+  # Run olddefconfig to resolve dependencies
+  echo "Resolving NetHunter configuration dependencies..."
+  if ! make O=out olddefconfig 2>&1 | tee -a build.log; then
+    if ! make O=out silentoldconfig 2>&1 | tee -a build.log; then
+      run_oldconfig || true
+    fi
+  fi
+}
+
+apply_nethunter_config
+
 # Run olddefconfig to ensure all new configurations are properly set without interactive prompts
 if ! make O=out olddefconfig; then
   # If olddefconfig fails, use silentoldconfig to avoid interactive prompts

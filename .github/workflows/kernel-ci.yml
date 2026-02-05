@@ -50,6 +50,19 @@ on:
         default: ""
         type: string
 
+      enable_nethunter_config:
+        description: Enable NetHunter kernel configuration
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      nethunter_config_level:
+        description: NetHunter configuration level (basic includes USB/Bluetooth/networking, full adds WiFi drivers/SDR/CAN/NFS)
+        required: false
+        default: "basic"
+        type: choice
+        options: ["basic", "full"]
+
 
 jobs:
   build:
@@ -107,6 +120,9 @@ jobs:
       - name: Telegram Build Start
         if: ${{ env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
+        env:
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: ci/telegram.sh start "${{ inputs.device }}" "${{ inputs.kernel_branch }}" "${{ inputs.defconfig }}" "" "" "" "${{ inputs.enable_custom_config }}" "${{ inputs.config_localversion }}" "${{ inputs.config_default_hostname }}" "${{ inputs.config_uname_override_string }}" "${{ inputs.config_cc_version_text }}"
 
       - name: Build Kernel (First Attempt)
@@ -118,6 +134,8 @@ jobs:
           CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
           CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
           CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: |
           if ci/run_logged.sh ci/build_kernel.sh "${{ inputs.defconfig }}"; then
             echo "FIRST_BUILD_SUCCESS=true" >> "$GITHUB_ENV"
@@ -141,6 +159,8 @@ jobs:
           CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
           CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
           CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: ci/run_logged.sh ci/build_kernel.sh "${{ inputs.defconfig }}"
 
       - name: Detect GKI
