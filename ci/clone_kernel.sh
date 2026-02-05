@@ -19,4 +19,4 @@ if [[ ! "$BRANCH" =~ ^[a-zA-Z0-9/_.-]+$ ]]; then
 fi
 
 rm -rf kernel
-git clone --depth=1 -b "$BRANCH" "$SRC" kernel
+git clone --depth=1 --branch "$BRANCH" --single-branch --no-tags "$SRC" kernel || { echo "ERROR: Git clone failed"; exit 1; }

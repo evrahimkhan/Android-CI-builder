@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # This script fixes the kernel configuration issue by ensuring all necessary
 # cfg80211 and wireless functions are properly available to the qcacld driver
 

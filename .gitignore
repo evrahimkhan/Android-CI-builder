@@ -2,3 +2,20 @@ kernel/
 
 .qwen/
 gha-creds-*.json
+
+# AnyKernel generated files
+anykernel/
+*.zip
+
+# Build artifacts
+out/
+build.log
+error.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

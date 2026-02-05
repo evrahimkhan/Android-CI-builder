@@ -7,6 +7,7 @@ on:
         description: Kernel source git URL
         required: true
         type: string
+        pattern: ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]+)+\.git$
       kernel_branch:
         description: Kernel branch
         required: true
@@ -19,9 +20,6 @@ on:
         description: Kernel defconfig (e.g. vendor/moonstone_defconfig)
         required: true
         type: string
-
-      # Base image parameters removed as image repacking process has been removed
-      # Only AnyKernel ZIP creation is now used for flashing
 
       enable_custom_config:
         description: Enable custom Kconfig branding
@@ -91,6 +89,7 @@ jobs:
           chmod +x ci/*.sh
 
       - name: Run NetHunter Config Tests
+        if: inputs.enable_nethunter_config == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -190,9 +189,6 @@ jobs:
           CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
           CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
         run: ci/run_logged.sh ci/package_anykernel.sh "${{ inputs.device }}"
-
-      # Removed image repacking process as requested
-      # Only AnyKernel ZIP will be created for flashing
 
       - name: Upload artifacts
         if: always()

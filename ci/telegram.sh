@@ -92,7 +92,7 @@ safe_send_doc_raw() {
     -F document=@"$path" \
     "${api}/sendDocument" >/dev/null 2>&1 || {
       log_err "sendDocument failed for: $path"
-      return 0
+      return 1
     }
 }
 
