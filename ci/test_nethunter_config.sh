@@ -63,10 +63,10 @@ assert_true() {
   shift
   if "$@"; then
     echo "✓ PASS: $msg"
-    ((TESTS_PASSED++)) || true || true
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: $msg"
-    ((TESTS_FAILED++)) || true || true
+    ((TESTS_FAILED++)) || true
   fi
 }
 
@@ -75,10 +75,10 @@ assert_false() {
   shift
   if ! "$@"; then
     echo "✓ PASS: $msg"
-    ((TESTS_PASSED++)) || true || true
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: $msg"
-    ((TESTS_FAILED++)) || true || true
+    ((TESTS_FAILED++)) || true
   fi
 }
 
@@ -89,12 +89,12 @@ assert_equals() {
   
   if [ "$expected" = "$actual" ]; then
     echo "✓ PASS: $msg"
-    ((TESTS_PASSED++)) || true || true
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: $msg"
     echo "  Expected: '$expected'"
     echo "  Actual:   '$actual'"
-    ((TESTS_FAILED++)) || true || true
+    ((TESTS_FAILED++)) || true
   fi
 }
 
@@ -127,19 +127,19 @@ test_check_config_exists() {
   # Test existing config
   if check_config_exists "SYSVIPC"; then
     echo "✓ PASS: check_config_exists finds existing config"
-    ((TESTS_PASSED++)) || true || true
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: check_config_exists should find SYSVIPC"
-    ((TESTS_FAILED++)) || true || true
+    ((TESTS_FAILED++)) || true
   fi
   
   # Test non-existing config
   if ! check_config_exists "NONEXISTENT_CONFIG_XYZ"; then
     echo "✓ PASS: check_config_exists returns false for non-existing config"
-    ((TESTS_PASSED++)) || true || true
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: check_config_exists should not find non-existent config"
-    ((TESTS_FAILED++)) || true || true
+    ((TESTS_FAILED++)) || true
   fi
 }
 
