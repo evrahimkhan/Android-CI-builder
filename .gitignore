@@ -1,1 +1,4 @@
 kernel/
+
+.qwen/
+gha-creds-*.json
