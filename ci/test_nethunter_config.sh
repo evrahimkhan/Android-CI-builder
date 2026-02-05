@@ -127,19 +127,19 @@ test_check_config_exists() {
   # Test existing config
   if check_config_exists "SYSVIPC"; then
     echo "✓ PASS: check_config_exists finds existing config"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: check_config_exists should find SYSVIPC"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
   
   # Test non-existing config
   if ! check_config_exists "NONEXISTENT_CONFIG_XYZ"; then
     echo "✓ PASS: check_config_exists returns false for non-existing config"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: check_config_exists should not find non-existent config"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
 }
 

@@ -5,11 +5,9 @@ SRC="${1:?kernel_source required}"
 BRANCH="${2:?kernel_branch required}"
 
 # Validate inputs to prevent command injection
-if [[ ! "$SRC" =~ ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]+)+\.git$ ]] &&
-   [[ ! "$SRC" =~ ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+\.git$ ]] &&
-   [[ ! "$SRC" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*@[a-zA-Z0-9][a-zA-Z0-9._-]*:[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+\.git$ ]] &&
-   [[ ! "$SRC" =~ ^git@[a-zA-Z0-9][a-zA-Z0-9._-]*:[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+\.git$ ]]; then
-  echo "ERROR: Invalid git URL format: $SRC" >&2
+# Only accept HTTPS URLs for security (no HTTP)
+if [[ ! "$SRC" =~ ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]+)+\.git$ ]]; then
+  echo "ERROR: Invalid git URL format: $SRC (must be HTTPS)" >&2
   exit 1
 fi
 

@@ -75,7 +75,7 @@ pick_latest() { ls -1t $1 2>/dev/null | head -n1 || true; }
 
 safe_send_msg() {
   local text="$1"
-  curl -sS -X POST "${api}/sendMessage" \
+  curl -sS --max-time 30 -X POST "${api}/sendMessage" \
     -d chat_id="${TG_CHAT_ID}" \
     -d parse_mode="HTML" \
     --data-urlencode text="$text" >/dev/null 2>&1 || log_err "sendMessage failed"
@@ -85,7 +85,7 @@ safe_send_doc_raw() {
   local path="$1"
   local caption="$2"
   [ -f "$path" ] || return 0
-  curl -sS \
+  curl -sS --max-time 60 \
     -F chat_id="${TG_CHAT_ID}" \
     --form-string parse_mode="HTML" \
     --form-string caption="$caption" \
