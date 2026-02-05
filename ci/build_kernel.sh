@@ -204,16 +204,12 @@ apply_nethunter_config() {
   if [ -f "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" ]; then
     # Export functions so they're available to the sourced script
     export -f set_kcfg_str set_kcfg_bool cfg_tool 2>/dev/null || true
-    
-    # Change to kernel directory and run the script
-    # Kernel is cloned into 'kernel/' subdirectory by ci/clone_kernel.sh
-    (
-      export KERNEL_DIR="kernel"
-      cd "${GITHUB_WORKSPACE}"
-      bash "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh"
-    )
+    if ! bash "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" 2>&1 | tee -a "$nethunter_log"; then
+      echo "Warning: NetHunter config script execution had issues" >&2
+    fi
   else
     echo "Warning: NetHunter config script not found at ${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh"
+    return 0
   fi
   
   echo ""
