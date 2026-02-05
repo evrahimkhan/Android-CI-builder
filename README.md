@@ -47,4 +47,4 @@ This project builds Android kernels and creates AnyKernel flashable ZIP files fo
 - It will create an AnyKernel flashable ZIP file
 - If the first build fails, it will automatically patch and retry 2nd time
 - Artifacts will be available for download after completion
-- Telegram notifications and direct file upload will be sent if `TG_TOKEN` and `TG_CHAT_ID` configured.
+- Telegram notifications and direct file will be sent if `TG_TOKEN` and `TG_CHAT_ID` configured.
