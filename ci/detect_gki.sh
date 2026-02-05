@@ -12,8 +12,12 @@ if [[ "$GITHUB_ENV" == *".."* ]]; then
   exit 1
 fi
 
-if [ -f kernel/out/.config ] && grep -q '^CONFIG_GKI=y' kernel/out/.config; then
-  echo "KERNEL_TYPE=GKI" >> "$GITHUB_ENV"
+if [ -f kernel/out/.config ]; then
+  if grep -q '^CONFIG_GKI=y' kernel/out/.config; then
+    echo "KERNEL_TYPE=GKI" >> "$GITHUB_ENV"
+  else
+    echo "KERNEL_TYPE=NON-GKI" >> "$GITHUB_ENV"
+  fi
 else
-  echo "KERNEL_TYPE=NON-GKI" >> "$GITHUB_ENV"
+  echo "KERNEL_TYPE=UNKNOWN (config not found)" >> "$GITHUB_ENV"
 fi

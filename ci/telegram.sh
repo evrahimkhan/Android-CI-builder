@@ -78,7 +78,7 @@ safe_send_msg() {
   curl -sS -X POST "${api}/sendMessage" \
     -d chat_id="${TG_CHAT_ID}" \
     -d parse_mode="HTML" \
-    --data-urlencode text="$text" >/dev/null 2>&1 || true
+    --data-urlencode text="$text" >/dev/null 2>&1 || log_err "sendMessage failed"
 }
 
 safe_send_doc_raw() {

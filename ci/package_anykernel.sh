@@ -77,7 +77,7 @@ ZIP_NAME="Kernel-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.zip"
 
 printf "Built for %s | Linux %s | CI %s/%s\n" \
   "${DEVICE}" "${KERNEL_VERSION:-unknown}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \
-  | zip -z "../${ZIP_NAME}" >/dev/null || true
+  | zip -z "../${ZIP_NAME}" >/dev/null || log_err "Failed to add comment to ZIP"
 
 echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
 echo "KERNEL_IMAGE_FILE=${KIMG}" >> "$GITHUB_ENV"

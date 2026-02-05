@@ -3,7 +3,9 @@ set -euo pipefail
 
 export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
 
+# Check if any Makefiles contain Polly flags
 if grep -RIn --include='Makefile*' --include='*.mk' --include='*.make' -- '-polly-' kernel >/dev/null 2>&1; then
+  echo "Found Polly flags in kernel, attempting to patch..."
   # Use secure temporary file creation
   local temp_file
   temp_file=$(mktemp) || { echo "ERROR: Could not create temporary file" >&2; exit 1; }
