@@ -63,10 +63,10 @@ assert_true() {
   shift
   if "$@"; then
     echo "✓ PASS: $msg"
-    ((TESTS_PASSED++)) || true
+    ((TESTS_PASSED++)) || true || true
   else
     echo "✗ FAIL: $msg"
-    ((TESTS_FAILED++)) || true
+    ((TESTS_FAILED++)) || true || true
   fi
 }
 
@@ -75,10 +75,10 @@ assert_false() {
   shift
   if ! "$@"; then
     echo "✓ PASS: $msg"
-    ((TESTS_PASSED++)) || true
+    ((TESTS_PASSED++)) || true || true
   else
     echo "✗ FAIL: $msg"
-    ((TESTS_FAILED++)) || true
+    ((TESTS_FAILED++)) || true || true
   fi
 }
 
@@ -89,12 +89,12 @@ assert_equals() {
   
   if [ "$expected" = "$actual" ]; then
     echo "✓ PASS: $msg"
-    ((TESTS_PASSED++)) || true
+    ((TESTS_PASSED++)) || true || true
   else
     echo "✗ FAIL: $msg"
     echo "  Expected: '$expected'"
     echo "  Actual:   '$actual'"
-    ((TESTS_FAILED++)) || true
+    ((TESTS_FAILED++)) || true || true
   fi
 }
 
@@ -127,19 +127,19 @@ test_check_config_exists() {
   # Test existing config
   if check_config_exists "SYSVIPC"; then
     echo "✓ PASS: check_config_exists finds existing config"
-    ((TESTS_PASSED++)) || true
+    ((TESTS_PASSED++)) || true || true
   else
     echo "✗ FAIL: check_config_exists should find SYSVIPC"
-    ((TESTS_FAILED++)) || true
+    ((TESTS_FAILED++)) || true || true
   fi
   
   # Test non-existing config
   if ! check_config_exists "NONEXISTENT_CONFIG_XYZ"; then
     echo "✓ PASS: check_config_exists returns false for non-existing config"
-    ((TESTS_PASSED++)) || true
+    ((TESTS_PASSED++)) || true || true
   else
     echo "✗ FAIL: check_config_exists should not find non-existent config"
-    ((TESTS_FAILED++)) || true
+    ((TESTS_FAILED++)) || true || true
   fi
 }
 
@@ -171,21 +171,21 @@ test_safe_set_kcfg() {
   safe_set_kcfg_bool "SYSVIPC" "y" 2>/dev/null
   if [ -f "${TEST_OUT_DIR}/config_changes.log" ]; then
     echo "✓ PASS: safe_set_kcfg_bool calls setter for existing config"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
     rm -f "${TEST_OUT_DIR}/config_changes.log"
   else
     echo "✗ FAIL: safe_set_kcfg_bool should have called setter"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
   
   # Test safe_set_kcfg_bool with non-existing config (should not call setter)
   safe_set_kcfg_bool "NONEXISTENT" "y" 2>/dev/null
   if [ ! -f "${TEST_OUT_DIR}/config_changes.log" ]; then
     echo "✓ PASS: safe_set_kcfg_bool skips non-existing config"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: safe_set_kcfg_bool should skip non-existing config"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
 }
 
@@ -197,20 +197,20 @@ test_check_gki_status() {
   # Test without GKI
   if ! check_gki_status 2>/dev/null; then
     echo "✓ PASS: check_gki_status returns false without CONFIG_GKI"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: check_gki_status should return false without GKI"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
   
   # Test with GKI
   echo "CONFIG_GKI=y" >> "${TEST_OUT_DIR}/.config"
   if check_gki_status 2>/dev/null; then
     echo "✓ PASS: check_gki_status returns true with CONFIG_GKI"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: check_gki_status should return true with GKI"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
   
   # Reset
@@ -229,10 +229,10 @@ test_backup_restore() {
   backup_kernel_config 2>/dev/null
   if [ -f "${TEST_OUT_DIR}/.config.backup.nethunter" ]; then
     echo "✓ PASS: backup_kernel_config creates backup"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: backup_kernel_config should create backup file"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
   
   # Modify config
@@ -242,20 +242,20 @@ test_backup_restore() {
   restore_kernel_config 2>/dev/null
   if grep -q "ORIGINAL_CONFIG=y" "${TEST_OUT_DIR}/.config"; then
     echo "✓ PASS: restore_kernel_config restores original"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: restore_kernel_config should restore original config"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
   
   # Test cleanup
   cleanup_kernel_config_backup 2>/dev/null
   if [ ! -f "${TEST_OUT_DIR}/.config.backup.nethunter" ]; then
     echo "✓ PASS: cleanup_kernel_config_backup removes backup"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: cleanup_kernel_config_backup should remove backup"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
 }
 
@@ -284,19 +284,19 @@ test_invalid_config_fallback() {
   # Check that it falls back to basic and completes successfully
   if echo "$output" | grep -q "Falling back to 'basic' level due to invalid input"; then
     echo "✓ PASS: Falls back to 'basic' on invalid config level"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: Should display fallback message for invalid config level"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
   
   # Check that it completes without error
   if apply_nethunter_config > /dev/null 2>&1; then
     echo "✓ PASS: Completes successfully with fallback"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: Should complete even with invalid config level"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
 }
 
@@ -323,19 +323,19 @@ test_integration_basic() {
   # Run main function (it should complete without errors)
   if apply_nethunter_config > "${TEST_OUT_DIR}/test_output.log" 2>&1; then
     echo "✓ PASS: apply_nethunter_config completes successfully"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: apply_nethunter_config should complete without errors"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
   
   # Check that backup was cleaned up
   if [ ! -f "${TEST_OUT_DIR}/.config.backup.nethunter" ]; then
     echo "✓ PASS: Integration test cleans up backup"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: Integration test should clean up backup"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
 }
 
@@ -347,20 +347,20 @@ test_edge_cases() {
   # Test with special characters in config names (should be rejected)
   if ! check_config_exists "CONFIG_WITH;SHELL_INJECTION" 2>/dev/null; then
     echo "✓ PASS: Special characters in config names handled safely"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: Special characters should be rejected"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
   
   # Test with empty kernel directory
   KERNEL_DIR="/nonexistent/path"
   if ! check_config_exists "SYSVIPC" 2>/dev/null; then
     echo "✓ PASS: Empty kernel directory handled gracefully"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
   else
     echo "✗ FAIL: Should handle missing kernel directory"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
   fi
   KERNEL_DIR="$TEST_KERNEL_DIR"
 }

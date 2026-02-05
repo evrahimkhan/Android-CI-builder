@@ -41,16 +41,19 @@ on:
         required: false
         default: "CI Builder"
         type: string
+        pattern: ^[a-zA-Z0-9 _.-]+$
       config_uname_override_string:
         description: CONFIG_UNAME_OVERRIDE_STRING
         required: false
         default: ""
         type: string
+        pattern: ^[a-zA-Z0-9 _.-]*$
       config_cc_version_text:
         description: Optional override for CONFIG_CC_VERSION_TEXT (blank = auto)
         required: false
         default: ""
         type: string
+        pattern: ^[a-zA-Z0-9 _.-]*$
 
       enable_nethunter_config:
         description: Enable NetHunter kernel configuration
