@@ -168,26 +168,37 @@ apply_custom_kconfig_branding() {
   fi
 }
 
-make O=out "$DEFCONFIG"
-# Use olddefconfig to automatically accept default values for new config options
-if ! make O=out olddefconfig; then
-  # If olddefconfig fails, use silentoldconfig to avoid interactive prompts
-  if ! make O=out silentoldconfig; then
-    # Fallback to oldconfig with yes "" if both fail
-    run_oldconfig || { echo "ERROR: oldconfig failed" > error.log; exit 0; }
+# Apply defconfig with proper error handling to avoid interactive prompts
+echo "===== [$(date +%Y-%m-%d\ %H:%M:%S)] Running defconfig: make O=out $DEFCONFIG ====="
+if ! make O=out "$DEFCONFIG" 2>&1 | tee -a build.log; then
+  echo "Warning: Initial defconfig failed, trying olddefconfig..."
+  if ! make O=out olddefconfig 2>&1 | tee -a build.log; then
+    echo "Warning: olddefconfig failed, trying silentoldconfig..."
+    if ! make O=out silentoldconfig 2>&1 | tee -a build.log; then
+      echo "Warning: silentoldconfig failed, using oldconfig with defaults..."
+      yes "" 2>/dev/null | run_oldconfig 2>&1 | tee -a build.log || true
+    fi
   fi
 fi
 
 # Apply custom kconfig branding if enabled
 apply_custom_kconfig_branding
 
-# Apply NetHunter configuration if enabled
+# CRITICAL: Apply NetHunter configuration BEFORE final olddefconfig
+# This ensures NetHunter configs are part of the final configuration
 apply_nethunter_config() {
+  echo ""
+  echo "=============================================="
+  echo "Applying NetHunter kernel configuration..."
+  echo "=============================================="
+  
   if [ "${NETHUNTER_ENABLED:-false}" != "true" ]; then
+    echo "NetHunter configuration disabled (set NETHUNTER_ENABLED=true to enable)"
     return 0
   fi
   
-  echo "Applying NetHunter kernel configuration..."
+  echo "Configuration level: ${NETHUNTER_CONFIG_LEVEL:-basic}"
+  echo ""
   
   # Source the NetHunter config script
   if [ -f "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" ]; then
@@ -203,16 +214,15 @@ apply_nethunter_config() {
     )
   else
     echo "Warning: NetHunter config script not found at ${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh"
-    return 0
   fi
   
-  # Run olddefconfig to resolve dependencies
+  echo ""
   echo "Resolving NetHunter configuration dependencies..."
-  # Use separate temp log to avoid race condition with main build
-  local nethunter_log="nethunter-config-${$}-$(date +%s).log"
+  # Use separate temp log to avoid race condition
+  local nethunter_log="nethunter-config-$$.log"
   if ! make O=out olddefconfig 2>&1 | tee -a "$nethunter_log"; then
     if ! make O=out silentoldconfig 2>&1 | tee -a "$nethunter_log"; then
-      run_oldconfig || true
+      yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a "$nethunter_log" || true
     fi
   fi
   
@@ -221,16 +231,23 @@ apply_nethunter_config() {
     cat "$nethunter_log" >> build.log 2>/dev/null || true
     rm -f "$nethunter_log"
   fi
+  
+  echo ""
+  echo "=============================================="
+  echo "NetHunter configuration applied"
+  echo "=============================================="
 }
 
 apply_nethunter_config
 
-# Run olddefconfig to ensure all new configurations are properly set without interactive prompts
-if ! make O=out olddefconfig; then
-  # If olddefconfig fails, use silentoldconfig to avoid interactive prompts
-  if ! make O=out silentoldconfig; then
-    # Fallback to oldconfig with yes "" if both fail
-    run_oldconfig || { echo "ERROR: oldconfig failed" > error.log; exit 0; }
+# Final olddefconfig to ensure all configurations are properly set
+echo ""
+echo "===== [$(date +%Y-%m-%d\ %H:%M:%S)] Running final olddefconfig ====="
+if ! make O=out olddefconfig 2>&1 | tee -a build.log; then
+  echo "Warning: Final olddefconfig failed, trying silentoldconfig..."
+  if ! make O=out silentoldconfig 2>&1 | tee -a build.log; then
+    echo "Warning: silentoldconfig failed, using oldconfig with defaults..."
+    yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a build.log || true
   fi
 fi
 
