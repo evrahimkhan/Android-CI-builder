@@ -3,6 +3,9 @@ set -euo pipefail
 
 DEVICE="${1:?device required}"
 
+# Simple error logging function (same as in telegram.sh)
+log_err() { echo "[package_anykernel] $*" >&2; }
+
 # Validate device name to prevent path traversal
 if [[ ! "$DEVICE" =~ ^[a-zA-Z0-9_-]+$ ]]; then
   echo "ERROR: Invalid device name format: $DEVICE" >&2
