@@ -5,8 +5,8 @@ test -f anykernel/anykernel.sh || { echo "Missing anykernel/anykernel.sh"; exit 
 
 if [ ! -f anykernel/tools/ak3-core.sh ]; then
   rm -rf anykernel_upstream
-  git clone --depth=1 https://github.com/osm0sis/AnyKernel3  anykernel_upstream
-  rsync -a --exclude 'anykernel.sh' anykernel_upstream/ anykernel/
+  git clone --depth=1 https://github.com/osm0sis/AnyKernel3 anykernel_upstream || { echo "ERROR: AnyKernel3 clone failed"; exit 1; }
+  rsync -a --exclude 'anykernel.sh' anykernel_upstream/ anykernel/ || { echo "ERROR: rsync failed"; rm -rf anykernel_upstream; exit 1; }
   rm -rf anykernel_upstream
 fi
 

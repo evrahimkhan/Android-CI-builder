@@ -73,7 +73,7 @@ sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/an
 sed -i "s|^[[:space:]]*device.name1=.*|device.name1=${DEVICE}|" anykernel/anykernel.sh || true
 
 ZIP_NAME="Kernel-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.zip"
-(cd anykernel && zip -r9 "../${ZIP_NAME}" . -x "*.git*" )
+(cd anykernel && zip -r9 "../${ZIP_NAME}" . -x "*.git*" ) || { echo "ERROR: ZIP creation failed"; exit 1; }
 
 printf "Built for %s | Linux %s | CI %s/%s\n" \
   "${DEVICE}" "${KERNEL_VERSION:-unknown}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \

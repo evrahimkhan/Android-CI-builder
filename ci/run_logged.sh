@@ -22,7 +22,7 @@ ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
 echo "===== [$(ts)] RUN: $*" | tee -a "$LOG"
 
 set +e
-("$@") 2>&1 | tee -a "$LOG"
+(eval "$@") 2>&1 | tee -a "$LOG"
 rc="${PIPESTATUS[0]}"
 set -e
 
