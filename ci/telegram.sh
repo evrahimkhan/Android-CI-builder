@@ -15,13 +15,6 @@ CFG_DEFAULT_HOSTNAME="${10:-CI Builder}"
 CFG_UNAME_OVERRIDE_STRING="${11:-}"
 CFG_CC_VERSION_TEXT="${12:-}"
 
-# NetHunter configuration status (13th parameter for start mode, from environment for success/failure)
-if [ "$MODE" = "start" ]; then
-  NETHUNTER_CONFIG_ENABLED="${13:-false}"
-else
-  # For success/failure modes, read from environment
-  NETHUNTER_CONFIG_ENABLED="${NETHUNTER_CONFIG_ENABLED:-false}"
-fi
 
 # Validate inputs to prevent potential information disclosure or injection
 if [[ ! "$MODE" =~ ^(start|success|failure)$ ]]; then
@@ -151,19 +144,11 @@ if [ "$MODE" = "start" ]; then
 • CC_VERSION_TEXT: <code>${CFG_CC_VERSION_TEXT:-auto}</code>"
   fi
 
-  # Determine NetHunter configuration status for start message
-  NETHUNTER_STATUS="disabled"
-  if [ "${NETHUNTER_CONFIG_ENABLED:-false}" = "true" ]; then
-    NETHUNTER_STATUS="enabled"
-  fi
-
   safe_send_msg "<b>🚀 Kernel Build Started</b>
 ━━━━━━━━━━━━━━━━━━━━
 📱 <b>Device</b>: <code>${DEVICE}</code>
 🌿 <b>Branch</b>: <code>${BRANCH}</code>
 ⚙️ <b>Defconfig</b>: <code>${DEFCONFIG}</code>
-
-🛡 <b>NetHunter Config</b>: <code>${NETHUNTER_STATUS}</code>
 
 ${branding}
 
@@ -178,13 +163,6 @@ if [ "$MODE" = "success" ]; then
   # Only AnyKernel ZIP is generated (no individual boot images)
   LOG="kernel/build.log"
 
-  # Determine NetHunter status based on environment
-  if [ "${NETHUNTER_CONFIG_ENABLED:-false}" = "true" ]; then
-    NETHUNTER_STATUS="enabled"
-  else
-    NETHUNTER_STATUS="disabled"
-  fi
-
   safe_send_msg "<b>✅ Build Succeeded</b>
 ━━━━━━━━━━━━━━━━━━━━
 📱 <b>Device</b>: <code>${DEVICE}</code>
@@ -192,7 +170,6 @@ if [ "$MODE" = "success" ]; then
 🐧 <b>Linux</b>: <code>${KERNEL_VERSION:-unknown}</code>
 🛠 <b>Clang</b>: <code>${CLANG_VERSION:-unknown}</code>
 ⏱ <b>Time</b>: <code>${BUILD_TIME:-0}s</code>
-🛡 <b>NetHunter</b>: <code>${NETHUNTER_STATUS}</code>
 
 📦 Uploading artifacts…"
 

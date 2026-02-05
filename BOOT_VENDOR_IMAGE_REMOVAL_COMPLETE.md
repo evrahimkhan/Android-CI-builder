@@ -24,7 +24,6 @@ I have successfully removed all boot and vendor image functionality from the And
 - ❌ No boot.img, vendor_boot.img, or init_boot.img files are generated
 - ✅ Only AnyKernel ZIP files are created for reliable flashing
 - ✅ All core kernel building functionality preserved
-- ✅ NetHunter configuration functionality properly integrated
 - ✅ Fastboot issues resolved (no more individual image flashing)
 
 ## Result

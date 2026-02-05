@@ -20,9 +20,6 @@ if [[ "$GITHUB_ENV" == *".."* ]]; then
   exit 1
 fi
 
-# Read NetHunter configuration status
-NETHUNTER_CONFIG_ENABLED="${NETHUNTER_CONFIG_ENABLED:-false}"
-echo "NETHUNTER_CONFIG_ENABLED=${NETHUNTER_CONFIG_ENABLED}" >> "$GITHUB_ENV"
 
 KERNELDIR="kernel/out/arch/arm64/boot"
 test -d "$KERNELDIR"
@@ -54,7 +51,6 @@ Image: ${KIMG}
 CI: ${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}
 SHA: ${GITHUB_SHA}
 
-NetHunter configurations: ${NETHUNTER_CONFIG_ENABLED:-false}
 Custom config enabled: ${CUSTOM_CONFIG_ENABLED:-false}
 CONFIG_LOCALVERSION: ${CFG_LOCALVERSION:--CI}
 CONFIG_DEFAULT_HOSTNAME: ${CFG_DEFAULT_HOSTNAME:-CI Builder}
