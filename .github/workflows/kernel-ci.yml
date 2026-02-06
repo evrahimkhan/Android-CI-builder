@@ -186,7 +186,14 @@ jobs:
         env:
           NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
           NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
-        run: ci/run_logged.sh ci/verify_nethunter_config.sh "${{ inputs.nethunter_config_level }}"
+        run: |
+          # Exit code 2 = optional configs missing (warning, not failure)
+          ci/run_logged.sh ci/verify_nethunter_config.sh "${{ inputs.nethunter_config_level }}" || exit_code=$?
+          if [ "${exit_code:-0}" = "1" ]; then
+            echo "ERROR: Critical NetHunter configs missing"
+            exit 1
+          fi
+          # Exit code 2 (warnings) is acceptable - continue build
 
       - name: Ensure AnyKernel core exists
         if: env.SUCCESS == '1'
