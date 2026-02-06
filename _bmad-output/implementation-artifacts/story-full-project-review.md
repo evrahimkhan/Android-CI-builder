@@ -1,11 +1,12 @@
 # Story: Full Project Code Review
 
 ## Story ID: PRJ-001
-## Status: ✅ PRODUCTION READY (Fully Verified)
+## Status: ✅ PRODUCTION READY (Fully Verified + Optimized)
 ## Priority: Critical
 ## Created: 2026-02-06
 ## Type: Project-Level Comprehensive Review
 ## Verified: 2026-02-06
+## Optimized: 2026-02-06
 
 ---
 
@@ -414,3 +415,34 @@ eval "$@" 2>&1 | tee -a "$LOG"
 | 2026-02-06 | Added review findings (0 HIGH, 3 MEDIUM, 2 LOW) |
 | 2026-02-06 | All fixes applied (input validation, local keyword removed) |
 | 2026-02-06 | Second verification pass - ALL CHECKS PASSED |
+| 2026-02-06 | Code optimization: Created ci/lib/validate.sh, fixed eval usage, centralized constants |
+| 2026-02-06 | Review follow-up: Fixed typo in validate.sh, removed unused constant, added EOF newline |
+
+---
+
+## Code Optimization Review Follow-up (2026-02-06)
+
+### Changes Made
+
+| File | Change |
+|------|--------|
+| `ci/lib/validate.sh` | NEW - Shared validation library with constants and functions |
+| `ci/run_logged.sh` | Fixed eval "$@" → "$@", uses shared validation |
+| `ci/telegram.sh` | Uses shared constants, removed duplicate functions |
+| `ci/build_kernel.sh` | Uses shared validation and CCACHE_SIZE constant |
+| `AGENTS.md` | Added shared library documentation |
+
+### Issues Fixed in Review
+
+| Issue | File | Fix |
+|-------|------|-----|
+| Typo in log_err() | `ci/lib/validate.sh:20` | `echovalidate` → `echo` |
+| Unused constant | `ci/lib/validate.sh` | Removed `TELEGRAM_MAX_SIZE_HUMAN` |
+| Missing EOF newline | `AGENTS.md` | Added trailing newline |
+
+### Verification
+
+```
+✓ ci/lib/validate.sh syntax OK
+✓ All 14 CI scripts pass bash syntax check
+```

@@ -231,6 +231,19 @@ jobs:
           tag_name: build-${{ github.run_id }}-${{ github.run_attempt }}
           name: Kernel-${{ inputs.device }} (run ${{ github.run_id }}/${{ github.run_attempt }})
           fail_on_unmatched_files: false
+          generate_release_notes: false
+          body: |
+            ## Build Information
+            - **Device:** ${{ inputs.device }}
+            - **Kernel:** ${{ env.KERNEL_VERSION || 'unknown' }}
+            - **Clang:** ${{ env.CLANG_VERSION || 'unknown' }}
+            - **Build Time:** ${{ env.BUILD_TIME || '0' }}s
+            - **Variant:** ${{ env.ZIP_VARIANT || 'normal' }}
+            - **Git SHA:** ${{ github.sha }}
+
+            ## Artifacts
+            - Kernel-*.zip
+            - build.log
           files: |
             Kernel-*.zip
             kernel/build.log

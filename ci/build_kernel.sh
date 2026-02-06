@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Source shared validation library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
+  source "${SCRIPT_DIR}/lib/validate.sh"
+fi
+
 DEFCONFIG="${1:?defconfig required}"
 
 # Validate DEFCONFIG parameter to prevent path traversal and command injection
@@ -10,23 +16,11 @@ if [[ ! "$DEFCONFIG" =~ ^[a-zA-Z0-9/_.-]+$ ]] || [[ "$DEFCONFIG" =~ \.\. ]] || [
 fi
 
 # Validate GITHUB_WORKSPACE and GITHUB_ENV to prevent path traversal
-if [[ ! "$GITHUB_WORKSPACE" =~ ^/ ]]; then
-  echo "ERROR: GITHUB_WORKSPACE must be an absolute path: $GITHUB_WORKSPACE" >&2
+if ! validate_workspace; then
   exit 1
 fi
 
-if [[ "$GITHUB_WORKSPACE" == *".."* ]]; then
-  echo "ERROR: GITHUB_WORKSPACE contains invalid characters: $GITHUB_WORKSPACE" >&2
-  exit 1
-fi
-
-if [[ ! "$GITHUB_ENV" =~ ^/ ]]; then
-  echo "ERROR: GITHUB_ENV must be an absolute path: $GITHUB_ENV" >&2
-  exit 1
-fi
-
-if [[ "$GITHUB_ENV" == *".."* ]]; then
-  echo "ERROR: GITHUB_ENV contains invalid characters: $GITHUB_ENV" >&2
+if ! validate_github_env; then
   exit 1
 fi
 
@@ -34,8 +28,8 @@ export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
 
 echo "SUCCESS=0" >> "$GITHUB_ENV"
 
-# Configure ccache with 5GB maximum cache size for faster rebuilds
-ccache -M 5G || echo "Warning: ccache configuration failed, continuing without cache" >&2
+# Configure ccache with shared constant for maximum cache size
+ccache -M "${CCACHE_SIZE}" || echo "Warning: ccache configuration failed, continuing without cache" >&2
 ccache -z || echo "Warning: ccache zero stats failed, continuing" >&2
 
 export CC="ccache clang"

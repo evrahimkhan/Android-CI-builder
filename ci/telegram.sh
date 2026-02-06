@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Source shared validation library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
+  source "${SCRIPT_DIR}/lib/validate.sh"
+fi
+
 MODE="${1:?mode required}"
 DEVICE="${2:-unknown}"
 
@@ -14,7 +20,6 @@ CFG_LOCALVERSION="${9:--CI}"
 CFG_DEFAULT_HOSTNAME="${10:-CI Builder}"
 CFG_UNAME_OVERRIDE_STRING="${11:-}"
 CFG_CC_VERSION_TEXT="${12:-}"
-
 
 # Validate inputs to prevent potential information disclosure or injection
 if [[ ! "$MODE" =~ ^(start|success|failure)$ ]]; then
@@ -47,32 +52,6 @@ api="https://api.telegram.org/bot${TG_TOKEN}"
 
 log_err() { echo "[telegram] $*" >&2; }
 
-human_size() {
-  local b="$1"
-
-  # Validate input is numeric
-  if ! [[ "$b" =~ ^[0-9]+$ ]]; then
-    echo "0 B" >&2
-    return 1
-  fi
-
-  # Check for potential overflow
-  if [ "$b" -gt $((2**63 - 1)) ]; then
-    echo "Invalid size: too large" >&2
-    return 1
-  fi
-
-  if [ "$b" -lt 1024 ]; then echo "${b} B"; return; fi
-  local kib=$((b / 1024))
-  if [ "$kib" -lt 1024 ]; then echo "${kib} KiB"; return; fi
-  local mib=$((kib / 1024))
-  if [ "$mib" -lt 1024 ]; then echo "${mib} MiB"; return; fi
-  local gib=$((mib / 1024))
-  echo "${gib} GiB"
-}
-
-pick_latest() { ls -1t $1 2>/dev/null | head -n1 || true; }
-
 safe_send_msg() {
   local text="$1"
   curl -sS --max-time 30 -X POST "${api}/sendMessage" \
@@ -101,11 +80,10 @@ safe_send_doc_auto() {
   local caption="$2"
   [ -f "$path" ] || return 0
 
-  # Telegram bot API limit is 50MB, use 45MB to leave room for overhead
+  # Use shared constant for Telegram max document size
   local size max hsz
   size="$(stat -c%s "$path" 2>/dev/null || echo 0)"
-  local TELEGRAM_MAX_DOC_SIZE=$((45 * 1024 * 1024))  # 45MB limit
-  max="${TELEGRAM_MAX_DOC_SIZE}"
+  max="${TELEGRAM_MAX_DOC_SIZE:-${TELEGRAM_MAX_SIZE}}"
   hsz="$(human_size "$size")"
 
   if [ "$size" -le "$max" ]; then

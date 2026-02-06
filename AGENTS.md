@@ -1,281 +1,124 @@
 # AGENTS.md
 
-This file contains guidelines and commands for agentic coding agents working in this Android CI builder repository.
+Guidelines for agentic coding agents in this Android kernel CI builder repository.
 
 ## Project Overview
 
-This is an Android kernel build automation system that:
-- Builds Android kernels from source using Proton Clang
-- Creates AnyKernel flashable ZIP files for custom recovery installation
-- Provides automated CI/CD via GitHub Actions
-- Includes retry mechanisms and Polly flag patching
-- Supports Telegram notifications and file sharing
+Automated Android kernel build system using Proton Clang with AnyKernel ZIP packaging and NetHunter configuration support.
 
 ## Build Commands
 
-### Kernel Build Commands
+### Kernel Build
 ```bash
-# Configure kernel with defconfig
+# Configure and build kernel
 make O=out <defconfig>
-
-# Build kernel with Proton Clang
 make -j$(nproc) O=out LLVM=1 LLVM_IAS=1
-
-# Update config with defaults (non-interactive)
-make O=out olddefconfig
-
-# Interactive config update (use with caution)
-make O=out oldconfig
 ```
 
-### CI Scripts Usage
+### CI Scripts
 ```bash
-# Install build dependencies
-ci/install_deps.sh
+# Run single test suite (NetHunter configuration)
+bash ci/test_nethunter_config.sh
 
-# Clone kernel source
-ci/clone_kernel.sh <git_url> <branch>
-
-# Setup Proton Clang toolchain
-ci/setup_proton_clang.sh
-
-# Build kernel with error handling
+# Build kernel with retry handling
 ci/build_kernel.sh <defconfig>
 
 # Package AnyKernel ZIP
 ci/package_anykernel.sh <device_codename>
 
-# Patch Polly flags on build failure
-ci/patch_polly.sh
-
-# Detect GKI kernel
-ci/detect_gki.sh
-
-# Apply NetHunter kernel configuration
-ci/apply_nethunter_config.sh
-
-# Test NetHunter configuration
-ci/test_nethunter_config.sh
-```
-
-### Running Single Tests
-
-#### NetHunter Configuration Tests
-A comprehensive test suite is available for NetHunter configuration:
-```bash
-# Run NetHunter configuration test suite
-bash ci/test_nethunter_config.sh
-
-# The test suite includes:
-# - Config existence checks
-# - Config level validation (basic/full)
-# - Safe config setters
-# - GKI detection
-# - Backup/restore functionality
-# - Integration tests
-# - Edge cases (invalid inputs, missing directories)
-```
-
-#### Kernel Build Tests
-Traditional build validation:
-```bash
-# Test kernel build (run from kernel directory)
-make O=out <defconfig> && make -j$(nproc) O=out LLVM=1 LLVM_IAS=1
+# Apply NetHunter configuration
+ci/apply_nethunter_config.sh basic|full
 ```
 
 ## Code Style Guidelines
 
-### Bash Scripting Standards
+### Bash Script Standards
 
-#### Shebang and Error Handling
-- Always use `#!/usr/bin/env bash` as shebang
-- Include `set -euo pipefail` immediately after shebang
-- Use parameter expansion with `:?` for required arguments
-- Validate all user inputs to prevent injection attacks
-
-#### Input Validation Pattern
+**Headers:**
 ```bash
-# Validate defconfig format
-if [[ ! "$DEFCONFIG" =~ ^[a-zA-Z0-9/_.-]+$ ]] || [[ "$DEFCONFIG" =~ \.\. ]]; then
-  echo "ERROR: Invalid defconfig format: $DEFCONFIG" >&2
-  exit 1
-fi
+#!/usr/bin/env bash
+set -euo pipefail
+```
 
-# Validate git URLs
-if [[ ! "$SRC" =~ ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]+)+\.git$ ]]; then
-  echo "ERROR: Invalid git URL format: $SRC" >&2
+**Input Validation:**
+```bash
+PARAM="${1:?param required}"
+if [[ ! "$PARAM" =~ ^[a-zA-Z0-9/_.-]+$ ]] || [[ "$PARAM" =~ \.\. ]]; then
+  echo "ERROR: Invalid format: $PARAM" >&2
   exit 1
 fi
 ```
 
-#### Function Naming and Structure
-- Use snake_case for function names
-- Prefix functions with descriptive verbs (set_, get_, validate_, etc.)
-- Use local variables inside functions
-- Return meaningful exit codes
+**Function Naming:** snake_case with verb prefix (`set_kcfg_str`, `validate_git_url`). Use `local` variables. Return meaningful exit codes.
 
-```bash
-set_kcfg_str() {
-  local key="$1"
-  local val="$2"
-  # Sanitize inputs
-  if [[ ! "$key" =~ ^[A-Za-z0-9_]+$ ]]; then
-    echo "ERROR: Invalid key format: $key" >&2
-    return 1
-  fi
-  # Function implementation
-}
-```
+**Quoting:** Always quote `"$VAR"`. Use `printf` instead of `echo`.
 
-#### Variable Naming
-- Use UPPER_CASE for environment variables and constants
-- Use lower_case for local variables
-- Use descriptive names (e.g., `KERNEL_VERSION` not `kv`)
+### YAML (GitHub Actions)
 
-#### Error Handling
-- Always check command exit codes
-- Use `|| true` for non-critical commands that may fail
-- Provide meaningful error messages to stderr
-- Exit with appropriate codes (0 for success, 1+ for errors)
-
-#### Quoting and Expansion
-- Quote all variable expansions: `"$VAR"`
-- Use `printf` instead of `echo` for safety
-- Escape special characters in user input
-
-### YAML Standards (GitHub Actions)
-
-#### Structure
-- Use 2-space indentation
-- Group related steps with descriptive names
-- Use `if` conditions for optional steps
-- Provide clear step descriptions
-
-#### Environment Variables
 ```yaml
 env:
   ARCH: arm64
   SUBARCH: arm64
-  CCACHE_DIR: ${{ github.workspace }}/.ccache
+steps:
+  - name: Descriptive step name
+    shell: bash
+    run: ci/run_logged.sh ci/script.sh "${{ inputs.param }}"
 ```
 
-#### Step Patterns
-```yaml
-- name: Descriptive step name
-  if: env.SUCCESS == '1'
-  shell: bash
-  run: ci/run_logged.sh ci/script.sh "${{ inputs.parameter }}"
-```
+## Security Guidelines
 
-### Security Guidelines
-
-#### Input Sanitization
-- Validate all user-provided parameters
-- Prevent path traversal attacks
-- Sanitize strings before shell command execution
-- Use allowlists rather than blocklists when possible
-
-#### Command Injection Prevention
-```bash
-# Good: Use arrays to avoid word splitting
-cmd=("clang" "--version")
-"${cmd[@]}"
-
-# Bad: Direct string expansion
-cmd="clang --version"
-$cmd
-```
-
-#### File Operations
-- Validate file paths are within expected directories
-- Use absolute paths when possible
+- Validate all user inputs with regex allowlists
+- Prevent path traversal (`..`, `/*`, `*/`)
+- Use arrays for command execution: `cmd=("clang" "--version"); "${cmd[@]}"`
+- Never log secrets or tokens
 - Check file existence before operations
 
-### Import and Module Standards
+## Script Organization
 
-#### Script Organization
-- Keep CI scripts in `ci/` directory
-- Make all scripts executable (`chmod +x`)
-- Use consistent naming: `verb-noun.sh` pattern
-- Include parameter validation at script start
+- All CI scripts in `ci/` directory
+- Shared utilities in `ci/lib/validate.sh`
+- Executable permissions (`chmod +x`)
+- Naming: `verb-noun.sh` pattern
+- Parameter validation at script start
+- Use `ci/run_logged.sh` for consistent logging
 
-#### Reusable Functions
-- Create helper functions for common operations
-- Use `ci/run_logged.sh` wrapper for consistent logging
-- Share functions via sourcing when needed
+### Shared Library (ci/lib/validate.sh)
 
-### Testing and Validation
+```bash
+# Source at script start
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
+  source "${SCRIPT_DIR}/lib/validate.sh"
+fi
 
-#### Build Validation
-- Kernel build success is primary validation
-- Check for required output files
-- Validate kernel image format
-- Test AnyKernel ZIP structure
+# Available constants
+readonly CCACHE_SIZE="5G"
+readonly TELEGRAM_MAX_SIZE=$((45 * 1024 * 1024))
 
-#### Manual Testing
-- Test generated ZIP files in recovery environment
-- Verify kernel boot functionality
-- Check device compatibility
+# Available functions
+validate_workspace        # Validates GITHUB_WORKSPACE
+validate_github_env       # Validates GITHUB_ENV path
+validate_defconfig        # Validates defconfig format
+validate_device_name      # Validates device codename
+sanitize_input            # Sanitizes user input
+pick_latest               # Gets most recent file
+human_size               # Formats bytes to human readable
+```
 
-### Documentation Standards
+## Testing
 
-#### Comments
-- Add comments for complex logic
-- Document security validations
-- Explain non-obvious parameter requirements
-- Include usage examples in scripts
+**Run single test:**
+```bash
+bash ci/test_nethunter_config.sh
+```
 
-#### Commit Messages
-- Use conventional commit format when possible
-- Focus on "why" rather than "what"
-- Reference relevant issues or PRs
+The test suite validates: config existence, level validation, GKI detection, backup/restore, edge cases.
 
-## Development Workflow
-
-### Making Changes
-1. Test changes locally before committing
-2. Validate all input parameters
-3. Ensure scripts remain executable
-4. Test with various kernel configurations
-
-### CI/CD Integration
-- Use GitHub Actions for automated testing
-- Validate workflow syntax
-- Test with different input combinations
-- Monitor build success rates
-
-### Security Considerations
-- Never log sensitive information
-- Validate all external inputs
-- Use secure temporary file handling
-- Follow principle of least privilege
+**Build validation:** Check for `Image.gz-dtb` or `Image` output, validate AnyKernel ZIP structure.
 
 ## Common Patterns
 
-### Logging Pattern
-```bash
-ui() { 
-  if command -v ui_print >/dev/null 2>&1; then 
-    ui_print "$1"
-  else 
-    echo "$1"
-  fi
-}
-```
-
-### Retry Pattern
-```bash
-# First attempt
-if ci/build_kernel.sh "$defconfig"; then
-  echo "SUCCESS=true" >> "$GITHUB_ENV"
-else
-  # Retry with patches
-  ci/patch_polly.sh
-  ci/build_kernel.sh "$defconfig"
-fi
-```
-
-### Environment Setup Pattern
+**Environment Setup:**
 ```bash
 export CC="ccache clang"
 export CXX="ccache clang++"
@@ -283,4 +126,20 @@ export LD=ld.lld
 export AR=llvm-ar
 ```
 
-This AGENTS.md file should be updated when new patterns emerge or coding standards evolve.
+**Retry Pattern:**
+```bash
+if ci/build_kernel.sh "$defconfig"; then
+  echo "SUCCESS=true" >> "$GITHUB_ENV"
+else
+  ci/patch_polly.sh
+  ci/build_kernel.sh "$defconfig"
+fi
+```
+
+## Development Workflow
+
+1. Test changes locally before committing
+2. Validate all input parameters
+3. Ensure scripts remain executable
+4. Use GitHub Actions for CI testing
+

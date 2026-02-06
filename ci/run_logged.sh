@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Validate GITHUB_WORKSPACE to prevent path traversal
-if [[ ! "$GITHUB_WORKSPACE" =~ ^/ ]]; then
-  echo "ERROR: GITHUB_WORKSPACE must be an absolute path: $GITHUB_WORKSPACE" >&2
-  exit 1
+# Source shared validation library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
+  source "${SCRIPT_DIR}/lib/validate.sh"
 fi
 
-# Prevent directory traversal in the path
-if [[ "$GITHUB_WORKSPACE" == *".."* ]]; then
-  echo "ERROR: GITHUB_WORKSPACE contains invalid characters: $GITHUB_WORKSPACE" >&2
+# Validate GITHUB_WORKSPACE to prevent path traversal
+if ! validate_workspace; then
   exit 1
 fi
 
@@ -22,8 +21,8 @@ ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
 echo "===== [$(ts)] RUN: $*" | tee -a "$LOG"
 
 set +e
-# Use eval with proper quoting to safely execute commands
-eval "$@" 2>&1 | tee -a "$LOG"
+# Safe command execution without eval - pass arguments directly
+"$@" 2>&1 | tee -a "$LOG"
 rc="${PIPESTATUS[0]}"
 set -e
 
