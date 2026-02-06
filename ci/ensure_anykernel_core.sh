@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Change to repository root to ensure relative paths work
+cd "${GITHUB_WORKSPACE:-$(pwd)}"
+
 # Ensure anykernel directory exists
 mkdir -p anykernel
 
