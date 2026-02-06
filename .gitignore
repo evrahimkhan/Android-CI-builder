@@ -19,3 +19,9 @@ error.log
 # OS
 .DS_Store
 Thumbs.db
+
+# bmad
+_bmad-output/
+*
+_bmad/
+*
