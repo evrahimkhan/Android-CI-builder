@@ -9,7 +9,7 @@ CONFIG_LEVEL="${1:-basic}"
 
 # Validate input
 if [[ ! "$CONFIG_LEVEL" =~ ^(basic|full)$ ]]; then
-    echo "[verify-nethunter] ERROR: Invalid config level: $CONFIG_LEVEL (must be 'basic' or 'full')" >&2
+    printf "[verify-nethunter] ERROR: Invalid config level: %s (must be 'basic' or 'full')\n" "$CONFIG_LEVEL" >&2
     exit 2
 fi
 

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Validate GITHUB_ENV to prevent path traversal
-if [[ ! "$GITHUB_ENV" =~ ^/ ]]; then
-  printf "ERROR: GITHUB_ENV must be an absolute path: %s\n" "$GITHUB_ENV" >&2
-  exit 1
+# Source shared validation library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
+  source "${SCRIPT_DIR}/lib/validate.sh"
 fi
 
-if [[ "$GITHUB_ENV" == *".."* ]]; then
-  printf "ERROR: GITHUB_ENV contains invalid characters: %s\n" "$GITHUB_ENV" >&2
+# Validate GITHUB_ENV to prevent path traversal
+if ! validate_github_env; then
   exit 1
 fi
 

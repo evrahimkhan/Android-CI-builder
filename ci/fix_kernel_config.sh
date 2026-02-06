@@ -4,6 +4,12 @@
 
 set -euo pipefail
 
+# Source shared validation library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
+  source "${SCRIPT_DIR}/lib/validate.sh"
+fi
+
 if [ $# -eq 0 ]; then
     printf "Usage: %s <defconfig>\n" "$0" >&2
     exit 1
@@ -12,8 +18,7 @@ fi
 DEFCONFIG="$1"
 
 # Validate DEFCONFIG parameter to prevent path traversal and command injection
-if [[ ! "$DEFCONFIG" =~ ^[a-zA-Z0-9/_.-]+$ ]] || [[ "$DEFCONFIG" =~ \.\. ]]; then
-    printf "ERROR: Invalid defconfig format: %s\n" "$DEFCONFIG" >&2
+if ! validate_defconfig "$DEFCONFIG"; then
     exit 1
 fi
 
