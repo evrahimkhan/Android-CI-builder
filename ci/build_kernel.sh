@@ -166,14 +166,14 @@ apply_custom_kconfig_branding() {
 }
 
 # Apply defconfig with proper error handling to avoid interactive prompts
-printf "===== [$(date +%Y-%m-%d\ %H:%M:%S)] Running defconfig: make O=out %s =====\n" "$DEFCONFIG" | tee -a LOG
-if ! make O=out "$DEFCONFIG" 2>&1 | tee -a LOG; then
+printf "===== [$(date +%Y-%m-%d\ %H:%M:%S)] Running defconfig: make O=out %s =====\n" "$DEFCONFIG" | tee -a "$LOG"
+if ! make O=out "$DEFCONFIG" 2>&1 | tee -a "$LOG"; then
   printf "Warning: Initial defconfig failed, trying olddefconfig...\n"
-  if ! make O=out olddefconfig 2>&1 | tee -a LOG; then
+  if ! make O=out olddefconfig 2>&1 | tee -a "$LOG"; then
     printf "Warning: olddefconfig failed, trying silentoldconfig...\n"
-    if ! make O=out silentoldconfig 2>&1 | tee -a LOG; then
+    if ! make O=out silentoldconfig 2>&1 | tee -a "$LOG"; then
       printf "Warning: silentoldconfig failed, using oldconfig with defaults...\n"
-      yes "" 2>/dev/null | run_oldconfig 2>&1 | tee -a LOG || true
+      yes "" 2>/dev/null | run_oldconfig 2>&1 | tee -a "$LOG" || true
     fi
   fi
 fi
@@ -215,7 +215,7 @@ apply_nethunter_config() {
     
     # Append to main build log and cleanup
     if [ -f "$nethunter_log" ]; then
-      cat "$nethunter_log" >> LOG 2>/dev/null || true
+      cat "$nethunter_log" >> "$LOG" 2>/dev/null || true
       rm -f "$nethunter_log"
     fi
   else
@@ -232,22 +232,22 @@ apply_nethunter_config
 
 # Final olddefconfig to ensure all configurations are properly set
 printf "\n===== [$(date +%Y-%m-%d\ %H:%M:%S)] Running final olddefconfig =====\n"
-if ! make O=out olddefconfig 2>&1 | tee -a LOG; then
+if ! make O=out olddefconfig 2>&1 | tee -a "$LOG"; then
   printf "Warning: Final olddefconfig failed, trying silentoldconfig...\n"
-  if ! make O=out silentoldconfig 2>&1 | tee -a LOG; then
+  if ! make O=out silentoldconfig 2>&1 | tee -a "$LOG"; then
     printf "Warning: silentoldconfig failed, using oldconfig with defaults...\n"
-    yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a LOG || true
+    yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a "$LOG" || true
   fi
 fi
 
 
 
 START="$(date +%s)"
-if make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 2>&1 | tee LOG; then
+if make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 2>&1 | tee -a "$LOG"; then
   printf "SUCCESS=1\n" >> "$GITHUB_ENV"
 else
   printf "SUCCESS=0\n" >> "$GITHUB_ENV"
-  cp -f LOG "${GITHUB_WORKSPACE}/kernel/error.log" 2>/dev/null || true
+  cp -f "$LOG" "${GITHUB_WORKSPACE}/kernel/error.log" 2>/dev/null || true
 fi
 END="$(date +%s)"
 printf "BUILD_TIME=%s\n" "$((END-START))" >> "$GITHUB_ENV"
@@ -258,7 +258,7 @@ printf "KERNEL_VERSION=%s\n" "${KVER:-unknown}" >> "$GITHUB_ENV"
 printf "CLANG_VERSION=%s\n" "${CLANG_VER:-unknown}" >> "$GITHUB_ENV"
 
 mkdir -p "${GITHUB_WORKSPACE}/kernel" || true
-cat LOG >> "${GITHUB_WORKSPACE}/kernel/build.log" 2>/dev/null || true
+cat "$LOG" >> "${GITHUB_WORKSPACE}/kernel/build.log" 2>/dev/null || true
 
 ccache -s || true
 exit 0

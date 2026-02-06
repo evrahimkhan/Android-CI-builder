@@ -61,6 +61,16 @@ if [[ ! "$TG_TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]]; then
   exit 1
 fi
 
+# Validate TG_CHAT_ID
+if [[ -z "${TG_CHAT_ID:-}" ]]; then
+  log_err "TG_CHAT_ID not set"
+  exit 1
+fi
+if [[ ! "$TG_CHAT_ID" =~ ^-?[0-9]+$ ]]; then
+  log_err "Invalid TG_CHAT_ID format (must be numeric)"
+  exit 1
+fi
+
 api="https://api.telegram.org/bot${TG_TOKEN}"
 
 log_err() { echo "[telegram] $*" >&2; }

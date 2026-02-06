@@ -21,7 +21,15 @@ fi
 # Clone AnyKernel3 if core files not present
 if [ ! -f anykernel/tools/ak3-core.sh ]; then
   rm -rf anykernel_upstream 2>/dev/null || true
-  git clone --depth=1 https://github.com/osm0sis/AnyKernel3 anykernel_upstream || { printf "ERROR: AnyKernel3 clone failed\n"; exit 1; }
+
+  # Validate AnyKernel URL before cloning
+  ANYKERNEL_URL="${ANYKERNEL_URL:-https://github.com/osm0sis/AnyKernel3}"
+  if ! validate_git_url "$ANYKERNEL_URL"; then
+    printf "ERROR: Invalid AnyKernel URL: %s\n" "$ANYKERNEL_URL" >&2
+    exit 1
+  fi
+
+  git clone --depth=1 "$ANYKERNEL_URL" anykernel_upstream || { printf "ERROR: AnyKernel3 clone failed\n"; exit 1; }
 
   # Copy upstream files to anykernel/, preserving local anykernel.sh if it exists
   rsync -a --exclude 'anykernel.sh' anykernel_upstream/ anykernel/ || { printf "ERROR: rsync failed\n"; rm -rf anykernel_upstream 2>/dev/null || true; exit 1; }
