@@ -176,7 +176,10 @@ if [ "$MODE" = "success" ]; then
   # Use NETHUNTER_CONFIG_LEVEL directly (passed as env var from workflow)
   # Fall back to 'normal' only if NetHunter is disabled
   if [ "${NETHUNTER_ENABLED:-false}" = "true" ]; then
-    nethunter_info="🛡️ <b>NetHunter</b>: <code>${NETHUNTER_CONFIG_LEVEL:-basic}</code>
+    # Capitalize first letter for display
+    NH_LEVEL="${NETHUNTER_CONFIG_LEVEL:-basic}"
+    NH_LEVEL_DISPLAY="$(tr '[:lower:]' '[:upper:]' <<< "${NH_LEVEL:0:1}")${NH_LEVEL:1}"
+    nethunter_info="🛡️ <b>NetHunter</b>: <code>${NH_LEVEL_DISPLAY}</code>
 "
   else
     nethunter_info="📦 <b>Variant</b>: <code>normal</code>
