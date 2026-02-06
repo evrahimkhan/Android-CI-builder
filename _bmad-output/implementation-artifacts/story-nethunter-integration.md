@@ -799,7 +799,46 @@ Wireless LAN drivers (Atheros, MediaTek, Realtek, Ralink), SDR support, CAN bus 
 
 ---
 
+### Eighteenth Review Fix (2026-02-06):
+
+**Bug:** Telegram Build Succeeded still showed "normal" even after seventeenth fix
+
+**Root Cause:** GITHUB_ENV reading was unreliable. NETHUNTER_CONFIG_LEVEL is passed directly from workflow and should be used instead.
+
+**Fix:** Changed telegram.sh to use `NETHUNTER_CONFIG_LEVEL` directly:
+```bash
+# Before (reading from GITHUB_ENV):
+ZIP_VARIANT=$(grep "^ZIP_VARIANT=" "$GITHUB_ENV" ...)
+
+# After (use NETHUNTER_CONFIG_LEVEL directly):
+NH_LEVEL="${NETHUNTER_CONFIG_LEVEL:-basic}"
+```
+
+**Files Modified:**
+- `ci/telegram.sh` - Lines 175-184
+
+**Status:** ✅ Fixed - Now shows Basic/Full correctly
+
+---
+
+### Nineteenth Review Fix (2026-02-06):
+
+**Enhancement:** Capitalize NetHunter level in notification
+
+**Fix:** Added capitalization for better readability:
+```bash
+NH_LEVEL_DISPLAY="$(tr '[:lower:]' '[:upper:]' <<< "${NH_LEVEL:0:1}")${NH_LEVEL:1}"
+nethunter_info="🛡️ <b>NetHunter</b>: <code>${NH_LEVEL_DISPLAY}</code>"
+```
+
+**Files Modified:**
+- `ci/telegram.sh` - Lines 178-180
+
+**Status:** ✅ Fixed - Now shows "Basic" and "Full" (capitalized)
+
+---
+
 **Review Date:** 2026-02-06
 **Issues Found:** 0 HIGH, 1 MEDIUM, 0 LOW
-**Fixed Count:** 1
+**Fixed Count:** 2 (eighteenth and nineteenth reviews)
 **Action Items:** 0
