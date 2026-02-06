@@ -20,5 +20,14 @@ if ! validate_branch_name "$BRANCH"; then
   exit 1
 fi
 
-rm -rf kernel
-git clone --depth=1 --branch "$BRANCH" --single-branch --tags "$SRC" kernel || { printf "ERROR: Git clone failed\n"; exit 1; }
+# Clone to a temporary directory first, then move
+# This prevents partial deletion if clone fails
+TEMP_KERNEL_DIR="kernel_temp_$$"
+if git clone --depth=1 --branch "$BRANCH" --single-branch --tags "$SRC" "$TEMP_KERNEL_DIR"; then
+  rm -rf kernel
+  mv "$TEMP_KERNEL_DIR" kernel
+else
+  rm -rf "$TEMP_KERNEL_DIR" 2>/dev/null || true
+  printf "ERROR: Git clone failed\n" >&2
+  exit 1
+fi

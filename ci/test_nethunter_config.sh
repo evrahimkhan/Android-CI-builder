@@ -102,16 +102,21 @@ assert_equals() {
 source_nethunter_script() {
   # Create a modified version for testing
   local script_path="${SCRIPT_DIR}/../ci/apply_nethunter_config.sh"
-  
+
+  # Resolve canonical path to handle symlinks and ..
+  if command -v realpath &>/dev/null; then
+    script_path="$(realpath "$script_path")"
+  fi
+
   # Validate script path exists
   if [ ! -f "$script_path" ]; then
     echo "ERROR: Script not found at $script_path" >&2
     return 1
   fi
-  
+
   # Override KERNEL_DIR for testing
   export KERNEL_DIR="$TEST_KERNEL_DIR"
-  
+
   # Source with test mocks - fail on error
   if ! source "$script_path" 2>/dev/null; then
     echo "ERROR: Failed to source $script_path" >&2

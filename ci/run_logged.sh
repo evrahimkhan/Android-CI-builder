@@ -29,7 +29,7 @@ set -e
 if [ "$rc" -ne 0 ]; then
   {
     printf "===== [%s] ERROR rc=%s in: %s\n" "$(ts)" "$rc" "$*"
-  } | tee -a "$LOG" | tee -a "$ERR" >/dev/null
+  } | tee -a "$LOG" | tee -a "$ERR"
 fi
 
 exit "$rc"

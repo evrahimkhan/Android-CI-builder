@@ -20,18 +20,18 @@ fi
 
 # Clone AnyKernel3 if core files not present
 if [ ! -f anykernel/tools/ak3-core.sh ]; then
-  rm -rf anykernel_upstream
+  rm -rf anykernel_upstream 2>/dev/null || true
   git clone --depth=1 https://github.com/osm0sis/AnyKernel3 anykernel_upstream || { printf "ERROR: AnyKernel3 clone failed\n"; exit 1; }
-  
+
   # Copy upstream files to anykernel/, preserving local anykernel.sh if it exists
-  rsync -a --exclude 'anykernel.sh' anykernel_upstream/ anykernel/ || { printf "ERROR: rsync failed\n"; rm -rf anykernel_upstream; exit 1; }
-  
+  rsync -a --exclude 'anykernel.sh' anykernel_upstream/ anykernel/ || { printf "ERROR: rsync failed\n"; rm -rf anykernel_upstream 2>/dev/null || true; exit 1; }
+
   # If no local anykernel.sh exists, copy from upstream
   if [ ! -f anykernel/anykernel.sh ]; then
-    cp anykernel_upstream/anykernel.sh anykernel/anykernel.sh || { printf "ERROR: Failed to copy anykernel.sh\n"; rm -rf anykernel_upstream; exit 1; }
+    cp anykernel_upstream/anykernel.sh anykernel/anykernel.sh || { printf "ERROR: Failed to copy anykernel.sh\n"; rm -rf anykernel_upstream 2>/dev/null || true; exit 1; }
   fi
-  
-  rm -rf anykernel_upstream
+
+  rm -rf anykernel_upstream 2>/dev/null || true
 fi
 
 # Verify anykernel.sh exists after setup

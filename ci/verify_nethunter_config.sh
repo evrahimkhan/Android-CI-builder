@@ -29,10 +29,14 @@ log_error() { echo "[verify-nethunter] ERROR: $*" >&2; }
 check_config() {
     local config_name="$1"
     local is_critical="${2:-false}"
-    
+
     ((CONFIGS_TOTAL++)) || true
-    
-    if grep -qE "^#?\s*CONFIG_${config_name}=" "$CONFIG_FILE" 2>/dev/null; then
+
+    # Escape special regex characters in config name
+    local escaped_config
+    escaped_config=$(printf '%s\n' "$config_name" | sed 's/[][\.*^$()+?{|]/\\&/g')
+
+    if grep -qE "^#?\s*CONFIG_${escaped_config}=" "$CONFIG_FILE" 2>/dev/null; then
         ((CONFIGS_FOUND++)) || true
         return 0
     else

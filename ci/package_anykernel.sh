@@ -86,15 +86,17 @@ if [[ "$KSTR_ESC" =~ \$\(|\`\(|sh\(|bash\(|\|.*\> ]] || [[ "$KSTR_ESC" == *">>"*
   exit 1
 fi
 
-sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/anykernel.sh || true
-sed -i "s|^[[:space:]]*device.name1=.*|device.name1=${DEVICE}|" anykernel/anykernel.sh || true
+# Validate file exists before sed operations
+if [ ! -f anykernel/anykernel.sh ]; then
+  printf "ERROR: anykernel/anykernel.sh not found\n" >&2
+  exit 1
+fi
+
+sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/anykernel.sh
+sed -i "s|^[[:space:]]*device.name1=.*|device.name1=${DEVICE}|" anykernel/anykernel.sh
 
 ZIP_NAME="Kernel-${DEVICE}-${ZIP_VARIANT}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.zip"
 (cd anykernel && zip -r9 "../${ZIP_NAME}" . -x "*.git*" ) || { printf "ERROR: ZIP creation failed\n"; exit 1; }
-
-printf "Built for %s | Linux %s | CI %s/%s\n" \
-  "${DEVICE}" "${KERNEL_VERSION:-unknown}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \
-  | zip -z "../${ZIP_NAME}" >/dev/null || log_err "Failed to add comment to ZIP"
 
 printf "Built for %s | Linux %s | CI %s/%s\n" \
   "${DEVICE}" "${KERNEL_VERSION:-unknown}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \
