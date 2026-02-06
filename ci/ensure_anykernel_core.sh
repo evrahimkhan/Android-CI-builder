@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-test -f anykernel/anykernel.sh || { echo "Missing anykernel/anykernel.sh"; exit 1; }
+# Ensure anykernel directory exists
+mkdir -p anykernel
 
+# Clone AnyKernel3 if not already present
 if [ ! -f anykernel/tools/ak3-core.sh ]; then
   rm -rf anykernel_upstream
   git clone --depth=1 https://github.com/osm0sis/AnyKernel3 anykernel_upstream || { echo "ERROR: AnyKernel3 clone failed"; exit 1; }
   rsync -a --exclude 'anykernel.sh' anykernel_upstream/ anykernel/ || { echo "ERROR: rsync failed"; rm -rf anykernel_upstream; exit 1; }
   rm -rf anykernel_upstream
+fi
+
+# Verify anykernel.sh exists after cloning/setup
+if [ ! -f anykernel/anykernel.sh ]; then
+  echo "ERROR: Missing anykernel/anykernel.sh after setup" >&2
+  exit 1
 fi
 
 # Verify the file exists and is legitimate before setting permissions
