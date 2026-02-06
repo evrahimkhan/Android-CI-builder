@@ -163,7 +163,7 @@ set_kcfg_str() {
   
   # Escape special characters in value to prevent injection
   local sanitized_val
-  sanitized_val=$(printf '%s\n' "$val" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  sanitized_val=$(printf '%s\n' "$val" | sed 's/\\/\\\\/g; s/"/\\"/g') || { log_error "Failed to sanitize value"; return 1; }
   
   local tool
   tool="$KERNEL_DIR/scripts/config"

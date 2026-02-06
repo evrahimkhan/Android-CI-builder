@@ -34,11 +34,5 @@ make O=out "$DEFCONFIG"
 # Use silentoldconfig to avoid any interactive prompts and sync configuration
 make O=out silentoldconfig
 
-# Verify that the configuration was successful
-if [ $? -eq 0 ]; then
-    printf "Configuration completed successfully\n"
-    exit 0
-else
-    printf "Configuration failed\n" >&2
-    exit 1
-fi
+# If we reach here, configuration was successful (set -e would have exited on failure)
+printf "Configuration completed successfully\n"

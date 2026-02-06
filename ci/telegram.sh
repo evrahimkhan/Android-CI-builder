@@ -67,10 +67,16 @@ log_err() { echo "[telegram] $*" >&2; }
 
 safe_send_msg() {
   local text="$1"
+  local log_file="${TELEGRAM_LOG:-/tmp/telegram_msg_$$.log}"
   curl -sS --max-time 30 -X POST "${api}/sendMessage" \
     -d chat_id="${TG_CHAT_ID}" \
     -d parse_mode="HTML" \
-    --data-urlencode text="$text" >/dev/null 2>&1 || log_err "sendMessage failed"
+    --data-urlencode text="$text" \
+    >"$log_file" 2>&1 || {
+      log_err "sendMessage failed"
+      cat "$log_file" >> "${TELEGRAM_ERR_LOG:-/tmp/telegram_errors.log}" 2>/dev/null || true
+    }
+  rm -f "$log_file" 2>/dev/null || true
 }
 
 safe_send_doc_raw() {
