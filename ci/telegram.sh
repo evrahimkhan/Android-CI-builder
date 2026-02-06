@@ -178,6 +178,10 @@ if [ "$MODE" = "success" ]; then
   if [ -f "$GITHUB_ENV" ]; then
     ZIP_VARIANT=$(grep "^ZIP_VARIANT=" "$GITHUB_ENV" 2>/dev/null | cut -d= -f2 || echo "normal")
   fi
+  # Debug: log GITHUB_ENV path and contents
+  echo "[telegram] GITHUB_ENV=$GITHUB_ENV" >&2
+  echo "[telegram] ZIP_VARIANT=$ZIP_VARIANT" >&2
+  echo "[telegram] NETHUNTER_ENABLED=$NETHUNTER_ENABLED" >&2
 
   if [ "${NETHUNTER_ENABLED:-false}" = "true" ]; then
     nethunter_info="🛡️ <b>NetHunter</b>: <code>${ZIP_VARIANT}</code>

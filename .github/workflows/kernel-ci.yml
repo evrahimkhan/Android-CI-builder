@@ -239,7 +239,6 @@ jobs:
         if: ${{ env.SUCCESS == '1' && env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
         env:
-          GITHUB_ENV: ${{ env.GITHUB_ENV }}
           NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
           NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: ci/telegram.sh success "${{ inputs.device }}"
@@ -248,7 +247,6 @@ jobs:
         if: ${{ env.SUCCESS == '0' && env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
         env:
-          GITHUB_ENV: ${{ env.GITHUB_ENV }}
           NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
           NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: ci/telegram.sh failure "${{ inputs.device }}"
