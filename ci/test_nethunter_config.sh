@@ -16,7 +16,7 @@ TESTS_FAILED=0
 
 # Setup test environment
 setup() {
-  echo "Setting up test environment..."
+  printf "Setting up test environment...\n"
   rm -rf "$TEST_DIR"
   mkdir -p "$TEST_OUT_DIR"
   
