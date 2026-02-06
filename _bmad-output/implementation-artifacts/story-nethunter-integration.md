@@ -782,6 +782,23 @@ Wireless LAN drivers (Atheros, MediaTek, Realtek, Ralink), SDR support, CAN bus 
 
 ---
 
+### Seventeenth Review Fix (2026-02-06):
+
+**Bug:** Telegram Build Succeeded notification always shows "normal" instead of "basic" or "full"
+
+**Root Cause:** Telegram Success/Failure steps couldn't read ZIP_VARIANT from GITHUB_ENV because GITHUB_ENV wasn't passed as environment variable.
+
+**Fix:** Added `GITHUB_ENV: ${{ env.GITHUB_ENV }}` to:
+- Telegram Success step (line 242)
+- Telegram Failure step (line 251)
+
+**Files Modified:**
+- `.github/workflows/kernel-ci.yml`
+
+**Status:** ✅ Fixed - Telegram now shows correct NetHunter variant
+
+---
+
 **Review Date:** 2026-02-06
 **Issues Found:** 0 HIGH, 1 MEDIUM, 0 LOW
 **Fixed Count:** 1
