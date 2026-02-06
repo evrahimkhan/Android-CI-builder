@@ -10,8 +10,7 @@ fi
 DEFCONFIG="${1:?defconfig required}"
 
 # Validate DEFCONFIG parameter to prevent path traversal and command injection
-if [[ ! "$DEFCONFIG" =~ ^[a-zA-Z0-9/_.-]+$ ]] || [[ "$DEFCONFIG" =~ \.\. ]] || [[ "$DEFCONFIG" =~ /\* ]] || [[ "$DEFCONFIG" =~ \*/ ]]; then
-  echo "ERROR: Invalid defconfig format: $DEFCONFIG" >&2
+if ! validate_defconfig "$DEFCONFIG"; then
   exit 1
 fi
 
@@ -29,8 +28,8 @@ export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
 echo "SUCCESS=0" >> "$GITHUB_ENV"
 
 # Configure ccache with shared constant for maximum cache size
-ccache -M "${CCACHE_SIZE}" || echo "Warning: ccache configuration failed, continuing without cache" >&2
-ccache -z || echo "Warning: ccache zero stats failed, continuing" >&2
+ccache -M "${CCACHE_SIZE}" || printf "Warning: ccache configuration failed, continuing without cache\n" >&2
+ccache -z || printf "Warning: ccache zero stats failed, continuing\n" >&2
 
 export CC="ccache clang"
 export CXX="ccache clang++"
@@ -164,13 +163,13 @@ apply_custom_kconfig_branding() {
 }
 
 # Apply defconfig with proper error handling to avoid interactive prompts
-echo "===== [$(date +%Y-%m-%d\ %H:%M:%S)] Running defconfig: make O=out $DEFCONFIG ====="
+printf "===== [$(date +%Y-%m-%d\ %H:%M:%S)] Running defconfig: make O=out %s =====\n" "$DEFCONFIG" | tee -a build.log
 if ! make O=out "$DEFCONFIG" 2>&1 | tee -a build.log; then
-  echo "Warning: Initial defconfig failed, trying olddefconfig..."
+  printf "Warning: Initial defconfig failed, trying olddefconfig...\n"
   if ! make O=out olddefconfig 2>&1 | tee -a build.log; then
-    echo "Warning: olddefconfig failed, trying silentoldconfig..."
+    printf "Warning: olddefconfig failed, trying silentoldconfig...\n"
     if ! make O=out silentoldconfig 2>&1 | tee -a build.log; then
-      echo "Warning: silentoldconfig failed, using oldconfig with defaults..."
+      printf "Warning: silentoldconfig failed, using oldconfig with defaults...\n"
       yes "" 2>/dev/null | run_oldconfig 2>&1 | tee -a build.log || true
     fi
   fi
@@ -188,12 +187,11 @@ apply_nethunter_config() {
   echo "=============================================="
   
   if [ "${NETHUNTER_ENABLED:-false}" != "true" ]; then
-    echo "NetHunter configuration disabled (set NETHUNTER_ENABLED=true to enable)"
+    printf "NetHunter configuration disabled (set NETHUNTER_ENABLED=true to enable)\n"
     return 0
   fi
-  
-  echo "Configuration level: ${NETHUNTER_CONFIG_LEVEL:-basic}"
-  echo ""
+
+  printf "Configuration level: %s\n\n" "${NETHUNTER_CONFIG_LEVEL:-basic}"
   
   # Source the NetHunter config script
   if [ -f "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" ]; then
@@ -202,11 +200,10 @@ apply_nethunter_config() {
     # Export functions so they're available to the sourced script
     export -f set_kcfg_str set_kcfg_bool cfg_tool 2>/dev/null || true
     if ! bash "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" 2>&1 | tee -a "$nethunter_log"; then
-      echo "Warning: NetHunter config script execution had issues" >&2
+      printf "Warning: NetHunter config script execution had issues\n" >&2
     fi
     
-    echo ""
-    echo "Resolving NetHunter configuration dependencies..."
+    printf "\nResolving NetHunter configuration dependencies...\n"
     if ! make O=out olddefconfig 2>&1 | tee -a "$nethunter_log"; then
       if ! make O=out silentoldconfig 2>&1 | tee -a "$nethunter_log"; then
         yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a "$nethunter_log" || true
@@ -223,21 +220,19 @@ apply_nethunter_config() {
     return 0
   fi
   
-  echo ""
-  echo "=============================================="
-  echo "NetHunter configuration applied"
-  echo "=============================================="
+  printf "\n==============================================\n"
+  printf "NetHunter configuration applied\n"
+  printf "==============================================\n"
 }
 
 apply_nethunter_config
 
 # Final olddefconfig to ensure all configurations are properly set
-echo ""
-echo "===== [$(date +%Y-%m-%d\ %H:%M:%S)] Running final olddefconfig ====="
+printf "\n===== [$(date +%Y-%m-%d\ %H:%M:%S)] Running final olddefconfig =====\n"
 if ! make O=out olddefconfig 2>&1 | tee -a build.log; then
-  echo "Warning: Final olddefconfig failed, trying silentoldconfig..."
+  printf "Warning: Final olddefconfig failed, trying silentoldconfig...\n"
   if ! make O=out silentoldconfig 2>&1 | tee -a build.log; then
-    echo "Warning: silentoldconfig failed, using oldconfig with defaults..."
+    printf "Warning: silentoldconfig failed, using oldconfig with defaults...\n"
     yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a build.log || true
   fi
 fi
@@ -246,13 +241,13 @@ fi
 
 START="$(date +%s)"
 if make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 2>&1 | tee build.log; then
-  echo "SUCCESS=1" >> "$GITHUB_ENV"
+  printf "SUCCESS=1\n" >> "$GITHUB_ENV"
 else
-  echo "SUCCESS=0" >> "$GITHUB_ENV"
+  printf "SUCCESS=0\n" >> "$GITHUB_ENV"
   cp -f build.log "${GITHUB_WORKSPACE}/kernel/error.log" 2>/dev/null || true
 fi
 END="$(date +%s)"
-echo "BUILD_TIME=$((END-START))" >> "$GITHUB_ENV"
+printf "BUILD_TIME=%s\n" "$((END-START))" >> "$GITHUB_ENV"
 
 KVER="$(make -s kernelversion | tr -d '\n' || true)"
 CLANG_VER="$(clang --version | head -n1 | tr -d '\n' || true)"

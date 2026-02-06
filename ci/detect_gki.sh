@@ -3,21 +3,21 @@ set -euo pipefail
 
 # Validate GITHUB_ENV to prevent path traversal
 if [[ ! "$GITHUB_ENV" =~ ^/ ]]; then
-  echo "ERROR: GITHUB_ENV must be an absolute path: $GITHUB_ENV" >&2
+  printf "ERROR: GITHUB_ENV must be an absolute path: %s\n" "$GITHUB_ENV" >&2
   exit 1
 fi
 
 if [[ "$GITHUB_ENV" == *".."* ]]; then
-  echo "ERROR: GITHUB_ENV contains invalid characters: $GITHUB_ENV" >&2
+  printf "ERROR: GITHUB_ENV contains invalid characters: %s\n" "$GITHUB_ENV" >&2
   exit 1
 fi
 
 if [ -f kernel/out/.config ]; then
   if grep -q '^CONFIG_GKI=y' kernel/out/.config; then
-    echo "KERNEL_TYPE=GKI" >> "$GITHUB_ENV"
+    printf "KERNEL_TYPE=GKI\n" >> "$GITHUB_ENV"
   else
-    echo "KERNEL_TYPE=NON-GKI" >> "$GITHUB_ENV"
+    printf "KERNEL_TYPE=NON-GKI\n" >> "$GITHUB_ENV"
   fi
 else
-  echo "KERNEL_TYPE=UNKNOWN (config not found)" >> "$GITHUB_ENV"
+  printf "KERNEL_TYPE=UNKNOWN (config not found)\n" >> "$GITHUB_ENV"
 fi

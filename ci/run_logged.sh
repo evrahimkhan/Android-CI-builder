@@ -18,7 +18,7 @@ ERR="${GITHUB_WORKSPACE}/kernel/error.log"
 
 ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
 
-echo "===== [$(ts)] RUN: $*" | tee -a "$LOG"
+printf "===== [%s] RUN: %s\n" "$(ts)" "$*" | tee -a "$LOG"
 
 set +e
 # Safe command execution without eval - pass arguments directly
@@ -28,7 +28,7 @@ set -e
 
 if [ "$rc" -ne 0 ]; then
   {
-    echo "===== [$(ts)] ERROR rc=${rc} in: $*"
+    printf "===== [%s] ERROR rc=%s in: %s\n" "$(ts)" "$rc" "$*"
   } | tee -a "$LOG" | tee -a "$ERR" >/dev/null
 fi
 

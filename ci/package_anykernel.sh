@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Source shared validation library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
+  source "${SCRIPT_DIR}/lib/validate.sh"
+fi
+
 DEVICE="${1:?device required}"
 
 # Simple error logging function (same as in telegram.sh)
-log_err() { echo "[package_anykernel] $*" >&2; }
+log_err() { printf "[package_anykernel] %s\n" "$*" >&2; }
 
 # Determine kernel variant for ZIP naming and notifications
 # Based on NETHUNTER_ENABLED and NETHUNTER_CONFIG_LEVEL environment variables
@@ -19,22 +25,15 @@ else
 fi
 
 # Export for Telegram notifications
-echo "ZIP_VARIANT=${ZIP_VARIANT}" >> "$GITHUB_ENV"
+printf "ZIP_VARIANT=%s\n" "$ZIP_VARIANT" >> "$GITHUB_ENV"
 
 # Validate device name to prevent path traversal
-if [[ ! "$DEVICE" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-  echo "ERROR: Invalid device name format: $DEVICE" >&2
+if ! validate_device_name "$DEVICE"; then
   exit 1
 fi
 
 # Validate GITHUB_ENV to prevent path traversal
-if [[ ! "$GITHUB_ENV" =~ ^/ ]]; then
-  echo "ERROR: GITHUB_ENV must be an absolute path: $GITHUB_ENV" >&2
-  exit 1
-fi
-
-if [[ "$GITHUB_ENV" == *".."* ]]; then
-  echo "ERROR: GITHUB_ENV contains invalid characters: $GITHUB_ENV" >&2
+if ! validate_github_env; then
   exit 1
 fi
 
@@ -54,7 +53,7 @@ for f in Image.gz-dtb Image-dtb Image.gz Image.lz4 Image zImage; do
 done
 
 if [ -z "$KIMG" ]; then
-  echo "No kernel image found in ${KERNELDIR}"
+  printf "No kernel image found in %s\n" "$KERNELDIR" >&2
   ls -la "$KERNELDIR" || true
   exit 1
 fi
@@ -83,7 +82,7 @@ KSTR_ESC=$(printf '%s\n' "$KSTR" | sed 's/[[\.*^$()+?{|]/\\&/g; s/&/\\&/g; s/\//
 
 # Validate that the sanitized string doesn't contain problematic sequences
 if [[ "$KSTR_ESC" =~ \$\(|\`\(|sh\(|bash\(|\|.*\> ]] || [[ "$KSTR_ESC" == *">>"* ]]; then
-  echo "ERROR: Sanitized string contains potentially dangerous sequences" >&2
+  printf "ERROR: Sanitized string contains potentially dangerous sequences\n" >&2
   exit 1
 fi
 
@@ -91,14 +90,18 @@ sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/an
 sed -i "s|^[[:space:]]*device.name1=.*|device.name1=${DEVICE}|" anykernel/anykernel.sh || true
 
 ZIP_NAME="Kernel-${DEVICE}-${ZIP_VARIANT}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.zip"
-(cd anykernel && zip -r9 "../${ZIP_NAME}" . -x "*.git*" ) || { echo "ERROR: ZIP creation failed"; exit 1; }
+(cd anykernel && zip -r9 "../${ZIP_NAME}" . -x "*.git*" ) || { printf "ERROR: ZIP creation failed\n"; exit 1; }
 
 printf "Built for %s | Linux %s | CI %s/%s\n" \
   "${DEVICE}" "${KERNEL_VERSION:-unknown}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \
   | zip -z "../${ZIP_NAME}" >/dev/null || log_err "Failed to add comment to ZIP"
 
-echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
-echo "KERNEL_IMAGE_FILE=${KIMG}" >> "$GITHUB_ENV"
+printf "Built for %s | Linux %s | CI %s/%s\n" \
+  "${DEVICE}" "${KERNEL_VERSION:-unknown}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \
+  | zip -z "../${ZIP_NAME}" >/dev/null || log_err "Failed to add comment to ZIP"
+
+printf "ZIP_NAME=%s\n" "$ZIP_NAME" >> "$GITHUB_ENV"
+printf "KERNEL_IMAGE_FILE=%s\n" "$KIMG" >> "$GITHUB_ENV"
 
 # No boot image variables to set since image repacking process has been removed
 # Only AnyKernel ZIP is generated for flashing

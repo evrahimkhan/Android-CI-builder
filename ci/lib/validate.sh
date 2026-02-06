@@ -14,14 +14,18 @@ readonly TELEGRAM_MAX_SIZE=$((45 * 1024 * 1024))
 # Logging Functions
 # ============================================
 
+log_error() {
+  log_err "[ERROR]" "$*"
+}
+
 log_err() {
   local prefix="${1:-[]}"
-  echo "${prefix} $*" >&2
+  printf "%s %s\n" "${prefix}" "$*" >&2
 }
 
 log_info() {
   local prefix="${1:-[validate]}"
-  echo "${prefix} $*"
+  printf "%s %s\n" "${prefix}" "$*"
 }
 
 # ============================================
@@ -32,17 +36,17 @@ validate_workspace() {
   local workspace="${GITHUB_WORKSPACE:-}"
 
   if [[ -z "$workspace" ]]; then
-    log_err "GITHUB_WORKSPACE is not set"
+  log_error "GITHUB_WORKSPACE is not set"
     return 1
   fi
 
   if [[ ! "$workspace" =~ ^/ ]]; then
-    log_err "GITHUB_WORKSPACE must be an absolute path: $workspace"
+    log_error "GITHUB_WORKSPACE must be an absolute path: $workspace"
     return 1
   fi
 
   if [[ "$workspace" == *".."* ]]; then
-    log_err "GITHUB_WORKSPACE contains invalid characters (..): $workspace"
+    log_error "GITHUB_WORKSPACE contains invalid characters (..): $workspace"
     return 1
   fi
 
@@ -53,12 +57,12 @@ validate_github_env() {
   local env_path="${1:-$GITHUB_ENV}"
 
   if [[ ! "$env_path" =~ ^/ ]]; then
-    log_err "GITHUB_ENV must be an absolute path: $env_path"
+    log_error "GITHUB_ENV must be an absolute path: $env_path"
     return 1
   fi
 
   if [[ "$env_path" == *".."* ]]; then
-    log_err "GITHUB_ENV contains invalid characters (..): $env_path"
+    log_error "GITHUB_ENV contains invalid characters (..): $env_path"
     return 1
   fi
 
@@ -69,11 +73,22 @@ validate_github_env() {
 # Input Validation Functions
 # ============================================
 
+validate_git_url() {
+  local url="$1"
+
+  if [[ ! "$url" =~ ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]+)+\.git$ ]]; then
+    printf "ERROR: Invalid git URL format: %s (must be HTTPS)\n" "$url" >&2
+    return 1
+  fi
+
+  return 0
+}
+
 validate_defconfig() {
   local defconfig="$1"
 
   if [[ ! "$defconfig" =~ ^[a-zA-Z0-9/_.-]+$ ]] || [[ "$defconfig" =~ \.\. ]]; then
-    echo "ERROR: Invalid defconfig format: $defconfig" >&2
+    printf "ERROR: Invalid defconfig format: %s\n" "$defconfig" >&2
     return 1
   fi
 
@@ -84,7 +99,7 @@ validate_device_name() {
   local device="$1"
 
   if [[ ! "$device" =~ ^[a-zA-Z0-9._-]+$ ]] || [[ "$device" =~ \.\. ]]; then
-    echo "ERROR: Invalid device name format: $device" >&2
+    printf "ERROR: Invalid device name format: %s\n" "$device" >&2
     return 1
   fi
 
@@ -95,7 +110,7 @@ validate_branch_name() {
   local branch="$1"
 
   if [[ -n "$branch" ]] && ([[ ! "$branch" =~ ^[a-zA-Z0-9/_.-]+$ ]] || [[ "$branch" =~ \.\. ]]); then
-    echo "ERROR: Invalid branch name format: $branch" >&2
+    printf "ERROR: Invalid branch name format: %s\n" "$branch" >&2
     return 1
   fi
 
@@ -122,29 +137,29 @@ human_size() {
   local b="$1"
 
   if ! [[ "$b" =~ ^[0-9]+$ ]]; then
-    echo "0 B" >&2
+    printf "0 B\n" >&2
     return 1
   fi
 
   if [ "$b" -lt 1024 ]; then
-    echo "${b} B"
+    printf "%s B\n" "$b"
     return
   fi
 
   local kib=$((b / 1024))
   if [ "$kib" -lt 1024 ]; then
-    echo "${kib} KiB"
+    printf "%s KiB\n" "$kib"
     return
   fi
 
   local mib=$((kib / 1024))
   if [ "$mib" -lt 1024 ]; then
-    echo "${mib} MiB"
+    printf "%s MiB\n" "$mib"
     return
   fi
 
   local gib=$((mib / 1024))
-  echo "${gib} GiB"
+  printf "%s GiB\n" "$gib"
 }
 
 # Export functions for use in other scripts

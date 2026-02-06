@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Source shared validation library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
+  source "${SCRIPT_DIR}/lib/validate.sh"
+fi
+
 # NetHunter Kernel Configuration Script
 # Universal support for kernel versions 4.x, 5.x, 6.x+
 # Automatically detects kernel version and applies compatible configurations
@@ -16,7 +22,7 @@ detect_kernel_version() {
   fi
   
   if [ -z "$kver" ] || [ "$kver" = "" ]; then
-    echo "Warning: Could not detect kernel version, assuming 4.4" >&2
+    log_warn "Could not detect kernel version, assuming 4.4"
     kver="4.4"
   fi
   
@@ -28,7 +34,7 @@ detect_kernel_version() {
   export KERNEL_MAJOR="${major:-4}"
   export KERNEL_MINOR="${minor:-4}"
   
-  echo "Detected kernel version: ${KERNEL_MAJOR}.${KERNEL_MINOR}"
+  printf "Detected kernel version: %s.%s\n" "$KERNEL_MAJOR" "$KERNEL_MINOR"
 }
 
 # Check if config option exists in Kconfig files
@@ -67,7 +73,7 @@ safe_set_kcfg_bool() {
   if check_config_exists "$key"; then
     set_kcfg_bool "$key" "$yn"
   else
-    echo "Notice: CONFIG_$key not available in this kernel version, skipping"
+    printf "Notice: CONFIG_%s not available in this kernel version, skipping\n" "$key"
   fi
 }
 
@@ -79,7 +85,7 @@ safe_set_kcfg_str() {
   if check_config_exists "$key"; then
     set_kcfg_str "$key" "$val"
   else
-    echo "Notice: CONFIG_$key not available in this kernel version, skipping"
+    printf "Notice: CONFIG_%s not available in this kernel version, skipping\n" "$key"
   fi
 }
 
@@ -94,7 +100,7 @@ set_kcfg_with_fallback() {
   elif check_config_exists "$fallback_key"; then
     set_kcfg_bool "$fallback_key" "$yn"
   else
-    echo "Notice: Neither CONFIG_$primary_key nor CONFIG_$fallback_key available, skipping"
+    printf "Notice: Neither CONFIG_%s nor CONFIG_%s available, skipping\n" "$primary_key" "$fallback_key"
   fi
 }
 
@@ -105,12 +111,12 @@ set_kcfg_bool() {
   
   # Sanitize inputs to prevent command injection
   if [[ ! "$key" =~ ^[A-Za-z0-9_]+$ ]]; then
-    echo "ERROR: Invalid key format: $key" >&2
+    log_error "Invalid key format: $key"
     return 1
   fi
   
   if [[ ! "$yn" =~ ^[yn]$ ]]; then
-    echo "ERROR: Invalid yn value: $yn, must be 'y' or 'n'" >&2
+    log_error "Invalid yn value: $yn, must be 'y' or 'n'"
     return 1
   fi
   
@@ -128,10 +134,10 @@ set_kcfg_bool() {
     # Fallback to sed manipulation
     if [ "$yn" = "y" ]; then
       sed -i "s|^# CONFIG_${key} is not set|CONFIG_${key}=y|" "$KERNEL_DIR/out/.config" 2>/dev/null || true
-      grep -q "^CONFIG_${key}=y" "$KERNEL_DIR/out/.config" 2>/dev/null || echo "CONFIG_${key}=y" >> "$KERNEL_DIR/out/.config"
+      grep -q "^CONFIG_${key}=y" "$KERNEL_DIR/out/.config" 2>/dev/null || printf "CONFIG_%s=y\n" "$key" >> "$KERNEL_DIR/out/.config"
     else
       sed -i "/^CONFIG_${key}=y$/d;/^CONFIG_${key}=m$/d" "$KERNEL_DIR/out/.config" 2>/dev/null || true
-      grep -q "^# CONFIG_${key} is not set" "$KERNEL_DIR/out/.config" 2>/dev/null || echo "# CONFIG_${key} is not set" >> "$KERNEL_DIR/out/.config"
+      grep -q "^# CONFIG_${key} is not set" "$KERNEL_DIR/out/.config" 2>/dev/null || printf "# CONFIG_%s is not set\n" "$key" >> "$KERNEL_DIR/out/.config"
     fi
   fi
 }
@@ -143,7 +149,7 @@ set_kcfg_str() {
   
   # Sanitize inputs
   if [[ ! "$key" =~ ^[A-Za-z0-9_]+$ ]]; then
-    echo "ERROR: Invalid key format: $key" >&2
+    log_error "Invalid key format: $key"
     return 1
   fi
   
@@ -168,7 +174,7 @@ set_kcfg_str() {
 
 # Tier 1: Universal configs (works on 4.x, 5.x, 6.x+)
 apply_nethunter_universal_core() {
-  echo "Applying universal NetHunter core configuration..."
+  printf "Applying universal NetHunter core configuration...\n"
   
   # General - Universal
   safe_set_kcfg_bool SYSVIPC y
@@ -212,7 +218,7 @@ apply_nethunter_universal_core() {
 
 # Tier 2: Version-aware Android/Binder support
 apply_nethunter_android_binder() {
-  echo "Applying Android Binder configuration..."
+  printf "Applying Android Binder configuration...\n"
   
   # Android Binder with version fallback
   # 4.x uses ANDROID_BINDER_IPC, 5.x+ uses ANDROID_BINDERFS
@@ -221,7 +227,7 @@ apply_nethunter_android_binder() {
 
 # Tier 3: Extended Networking (4.x+)
 apply_nethunter_networking() {
-  echo "Applying extended networking configuration..."
+  printf "Applying extended networking configuration...\n"
   
   # USB Ethernet adapters
   safe_set_kcfg_bool USB_RTL8150 y
@@ -241,7 +247,7 @@ apply_nethunter_networking() {
 
 # Tier 4: Wireless LAN Drivers (4.x+)
 apply_nethunter_wireless() {
-  echo "Applying wireless LAN configuration..."
+  printf "Applying wireless LAN configuration...\n"
   
   # Atheros/Qualcomm
   safe_set_kcfg_bool WLAN_VENDOR_ATH y
@@ -283,7 +289,7 @@ apply_nethunter_wireless() {
 
 # Tier 5: SDR Support (4.x+, hardware dependent)
 apply_nethunter_sdr() {
-  echo "Applying SDR configuration..."
+  printf "Applying SDR configuration...\n"
   
   # Digital TV and SDR support
   safe_set_kcfg_bool MEDIA_DIGITAL_TV_SUPPORT y
@@ -303,7 +309,7 @@ apply_nethunter_sdr() {
 
 # Tier 6: CAN Support (4.x+, specialized hardware)
 apply_nethunter_can() {
-  echo "Applying CAN bus configuration..."
+  printf "Applying CAN bus configuration...\n"
   
   # CAN subsystem
   safe_set_kcfg_bool CAN y
@@ -329,7 +335,7 @@ apply_nethunter_can() {
 
 # GKI-aware configuration (only for non-GKI kernels)
 apply_nethunter_nongki_extras() {
-  echo "Applying non-GKI specific configurations..."
+  printf "Applying non-GKI specific configurations...\n"
   
   # These are better handled as vendor modules in GKI 2.0
   # But for non-GKI kernels, we build them in
@@ -361,7 +367,7 @@ check_gki_status() {
 backup_kernel_config() {
   if [ -f "$KERNEL_DIR/out/.config" ]; then
     cp "$KERNEL_DIR/out/.config" "$KERNEL_DIR/out/.config.backup.nethunter" 2>/dev/null || true
-    echo "Backup created: .config.backup.nethunter"
+    printf "Backup created: .config.backup.nethunter\n"
   fi
 }
 
@@ -369,7 +375,7 @@ backup_kernel_config() {
 restore_kernel_config() {
   if [ -f "$KERNEL_DIR/out/.config.backup.nethunter" ]; then
     cp "$KERNEL_DIR/out/.config.backup.nethunter" "$KERNEL_DIR/out/.config" 2>/dev/null || true
-    echo "Restored kernel config from backup"
+    printf "Restored kernel config from backup\n"
     rm -f "$KERNEL_DIR/out/.config.backup.nethunter"
   fi
 }
@@ -388,11 +394,11 @@ validate_config_level() {
       return 0
       ;;
     "")
-      echo "Warning: NETHUNTER_CONFIG_LEVEL not set, defaulting to 'basic'"
+      log_warn "NETHUNTER_CONFIG_LEVEL not set, defaulting to 'basic'"
       return 0
       ;;
     *)
-      echo "ERROR: Invalid NETHUNTER_CONFIG_LEVEL='$level'. Must be 'basic' or 'full'" >&2
+      log_error "Invalid NETHUNTER_CONFIG_LEVEL='$level'. Must be 'basic' or 'full'"
       return 1
       ;;
   esac
@@ -404,13 +410,13 @@ apply_nethunter_config() {
   
   # Validate config level
   if ! validate_config_level "$level"; then
-    echo "Falling back to 'basic' level due to invalid input"
+    printf "Falling back to 'basic' level due to invalid input\n"
     level="basic"
   fi
   
-  echo "=============================================="
-  echo "NetHunter Kernel Configuration"
-  echo "=============================================="
+  printf "\n==============================================\n"
+  printf "NetHunter Kernel Configuration\n"
+  printf "==============================================\n"
   
   # Detect kernel version
   detect_kernel_version
@@ -419,19 +425,18 @@ apply_nethunter_config() {
   local is_gki=false
   if check_gki_status; then
     is_gki=true
-    echo "GKI kernel detected - will respect GKI restrictions"
+    printf "GKI kernel detected - will respect GKI restrictions\n"
   else
-    echo "Non-GKI kernel detected - full configuration available"
+    printf "Non-GKI kernel detected - full configuration available\n"
   fi
   
-  echo "Configuration level: $level"
-  echo ""
+  printf "Configuration level: %s\n\n" "$level"
   
   # Backup config before modifications
   backup_kernel_config
   
   # Set trap to restore on error
-  trap 'echo "ERROR: NetHunter configuration failed, restoring backup..."; restore_kernel_config; exit 1' ERR
+  trap 'log_error "NetHunter configuration failed, restoring backup..."; restore_kernel_config; exit 1' ERR
   
   # Always apply universal core
   apply_nethunter_universal_core
@@ -456,15 +461,14 @@ apply_nethunter_config() {
   # Cleanup backup
   cleanup_kernel_config_backup
   
-  echo ""
-  echo "=============================================="
-  echo "NetHunter configuration applied successfully"
-  echo "=============================================="
+  printf "\n==============================================\n"
+  printf "NetHunter configuration applied successfully\n"
+  printf "==============================================\n"
 }
 
 # Main execution
 if [ "${NETHUNTER_ENABLED:-false}" != "true" ]; then
-  echo "NetHunter configuration disabled (set NETHUNTER_ENABLED=true to enable)"
+  printf "NetHunter configuration disabled (set NETHUNTER_ENABLED=true to enable)\n"
   exit 0
 fi
 
@@ -475,7 +479,7 @@ fi
 
 # Check if .config exists
 if [ ! -f "out/.config" ]; then
-  echo "ERROR: Kernel config not found at out/.config" >&2
+  log_error "Kernel config not found at out/.config"
   exit 1
 fi
 

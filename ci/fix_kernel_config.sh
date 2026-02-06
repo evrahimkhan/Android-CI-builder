@@ -5,7 +5,7 @@
 set -euo pipefail
 
 if [ $# -eq 0 ]; then
-    echo "Usage: $0 <defconfig>"
+    printf "Usage: %s <defconfig>\n" "$0" >&2
     exit 1
 fi
 
@@ -13,7 +13,7 @@ DEFCONFIG="$1"
 
 # Validate DEFCONFIG parameter to prevent path traversal and command injection
 if [[ ! "$DEFCONFIG" =~ ^[a-zA-Z0-9/_.-]+$ ]] || [[ "$DEFCONFIG" =~ \.\. ]]; then
-    echo "ERROR: Invalid defconfig format: $DEFCONFIG" >&2
+    printf "ERROR: Invalid defconfig format: %s\n" "$DEFCONFIG" >&2
     exit 1
 fi
 
@@ -26,15 +26,14 @@ mkdir -p out
 # Apply the defconfig
 make O=out "$DEFCONFIG"
 
-# Use silentoldconfig to avoid any interactive prompts
-# This is the most reliable method to sync configuration without user input
-scripts/kconfig/conf --silentoldconfig Kconfig
+# Use silentoldconfig to avoid any interactive prompts and sync configuration
+make O=out silentoldconfig
 
 # Verify that the configuration was successful
 if [ $? -eq 0 ]; then
-    echo "Configuration completed successfully"
+    printf "Configuration completed successfully\n"
     exit 0
 else
-    echo "Configuration failed"
+    printf "Configuration failed\n" >&2
     exit 1
 fi
