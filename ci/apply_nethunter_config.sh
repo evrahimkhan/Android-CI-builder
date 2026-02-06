@@ -41,27 +41,31 @@ detect_kernel_version() {
 # Handles multiple Kconfig directives: config, menuconfig, choice, etc.
 check_config_exists() {
   local config_name="$1"
-  
+
   if [ ! -d "$KERNEL_DIR" ]; then
     return 1
   fi
-  
+
   # Search in Kconfig files with multiple pattern variants
-  # Pattern 1: Standard config
-  # Pattern 2: menuconfig
-  # Pattern 3: choice options
-  if find "$KERNEL_DIR" -name "Kconfig*" -type f 2>/dev/null | \
-     xargs grep -lE "^(config|menuconfig)[[:space:]]+$config_name([[:space:]]|$)" 2>/dev/null | grep -q .; then
-    return 0  # Config exists
-  fi
-  
+  # Use while read with null delimiters to safely handle filenames
+  while IFS= read -r -d '' kconfig_file; do
+    # Validate path doesn't contain dangerous characters
+    if [[ "$kconfig_file" != *\;* ]] && [[ "$kconfig_file" != *\|* ]] && [[ "$kconfig_file" != *\`* ]] && [[ "$kconfig_file" != \$* ]]; then
+      if grep -qE "^(config|menuconfig)[[:space:]]+${config_name}([[:space:]]|$)" "$kconfig_file" 2>/dev/null; then
+        return 0  # Config exists
+      fi
+    fi
+  done < <(find "$KERNEL_DIR" -name "Kconfig*" -type f -print0 2>/dev/null)
+
   # Also check if it's already in .config (may be from defconfig)
   if [ -f "$KERNEL_DIR/out/.config" ]; then
-    if grep -qE "^#?\s*CONFIG_${config_name}=" "$KERNEL_DIR/out/.config" 2>/dev/null; then
+    local escaped_config
+    escaped_config=$(printf '%s\n' "$config_name" | sed 's/[][\.*^$()+?{|]/\\&/g')
+    if grep -qE "^#?\s*CONFIG_${escaped_config}=" "$KERNEL_DIR/out/.config" 2>/dev/null; then
       return 0  # Config exists in .config
     fi
   fi
-  
+
   return 1  # Config doesn't exist
 }
 
@@ -108,21 +112,21 @@ set_kcfg_with_fallback() {
 set_kcfg_bool() {
   local key="$1"
   local yn="$2"
-  
+
   # Sanitize inputs to prevent command injection
   if [[ ! "$key" =~ ^[A-Za-z0-9_]+$ ]]; then
     log_error "Invalid key format: $key"
     return 1
   fi
-  
+
   if [[ ! "$yn" =~ ^[yn]$ ]]; then
     log_error "Invalid yn value: $yn, must be 'y' or 'n'"
     return 1
   fi
-  
+
   local tool
   tool="$KERNEL_DIR/scripts/config"
-  
+
   if [ -f "$tool" ]; then
     chmod +x "$tool" 2>/dev/null || true
     if [ "$yn" = "y" ]; then
@@ -131,13 +135,17 @@ set_kcfg_bool() {
       "$tool" --file "$KERNEL_DIR/out/.config" -d "$key" >/dev/null 2>&1 || true
     fi
   else
-    # Fallback to sed manipulation
+    # Fallback to sed manipulation with proper error handling
     if [ "$yn" = "y" ]; then
       sed -i "s|^# CONFIG_${key} is not set|CONFIG_${key}=y|" "$KERNEL_DIR/out/.config" 2>/dev/null || true
-      grep -q "^CONFIG_${key}=y" "$KERNEL_DIR/out/.config" 2>/dev/null || printf "CONFIG_%s=y\n" "$key" >> "$KERNEL_DIR/out/.config"
+      if grep -q "^CONFIG_${key}=y" "$KERNEL_DIR/out/.config" 2>/dev/null; then
+        : # Config already set
+      else
+        printf "CONFIG_%s=y\n" "$key" >> "$KERNEL_DIR/out/.config" || { log_error "Failed to append CONFIG_${key}"; return 1; }
+      fi
     else
       sed -i "/^CONFIG_${key}=y$/d;/^CONFIG_${key}=m$/d" "$KERNEL_DIR/out/.config" 2>/dev/null || true
-      grep -q "^# CONFIG_${key} is not set" "$KERNEL_DIR/out/.config" 2>/dev/null || printf "# CONFIG_%s is not set\n" "$key" >> "$KERNEL_DIR/out/.config"
+      grep -q "^# CONFIG_${key} is not set" "$KERNEL_DIR/out/.config" 2>/dev/null || { log_error "Failed to mark CONFIG_${key} as not set"; return 1; }
     fi
   fi
 }

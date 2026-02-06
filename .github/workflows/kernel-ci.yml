@@ -235,10 +235,10 @@ jobs:
           body: |
             ## Build Information
             - **Device:** ${{ inputs.device }}
-            - **Kernel:** ${{ env.KERNEL_VERSION || 'unknown' }}
-            - **Clang:** ${{ env.CLANG_VERSION || 'unknown' }}
-            - **Build Time:** ${{ env.BUILD_TIME || '0' }}s
-            - **Variant:** ${{ env.ZIP_VARIANT || 'normal' }}
+            - **Kernel:** ${{ env.KERNEL_VERSION != '' && env.KERNEL_VERSION || 'unknown' }}
+            - **Clang:** ${{ env.CLANG_VERSION != '' && env.CLANG_VERSION || 'unknown' }}
+            - **Build Time:** ${{ env.BUILD_TIME != '' && env.BUILD_TIME || '0' }}s
+            - **Variant:** ${{ env.ZIP_VARIANT != '' && env.ZIP_VARIANT || 'normal' }}
             - **Git SHA:** ${{ github.sha }}
 
             ## Artifacts

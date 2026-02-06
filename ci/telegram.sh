@@ -48,6 +48,19 @@ BRANCH=$(printf '%s\n' "$BRANCH" | sed 's/[^a-zA-Z0-9/_.-]/_/g')
 DEFCONFIG=$(printf '%s\n' "$DEFCONFIG" | sed 's/[^a-zA-Z0-9/_.-]/_/g')
 
 cd "${GITHUB_WORKSPACE:-$(pwd)}"
+
+# Validate TG_TOKEN before constructing API URL
+if [[ -z "${TG_TOKEN:-}" ]]; then
+  log_err "TG_TOKEN not set, skipping Telegram notification"
+  exit 0
+fi
+
+# Validate token format (Bot API tokens are like 123456:ABC-DEF1234ghIkl-zyx57WzyvAwdsDEFG)
+if [[ ! "$TG_TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]]; then
+  log_err "Invalid TG_TOKEN format"
+  exit 1
+fi
+
 api="https://api.telegram.org/bot${TG_TOKEN}"
 
 log_err() { echo "[telegram] $*" >&2; }
@@ -64,15 +77,19 @@ safe_send_doc_raw() {
   local path="$1"
   local caption="$2"
   [ -f "$path" ] || return 0
+  local log_file="${TELEGRAM_LOG:-/tmp/telegram_$$.log}"
   curl -sS --max-time 60 \
     -F chat_id="${TG_CHAT_ID}" \
     --form-string parse_mode="HTML" \
     --form-string caption="$caption" \
     -F document=@"$path" \
-    "${api}/sendDocument" >/dev/null 2>&1 || {
+    >"$log_file" 2>&1 || {
       log_err "sendDocument failed for: $path"
+      cat "$log_file" >> "${TELEGRAM_ERR_LOG:-/tmp/telegram_errors.log}" 2>/dev/null || true
+      rm -f "$log_file" 2>/dev/null || true
       return 1
     }
+  rm -f "$log_file" 2>/dev/null || true
 }
 
 safe_send_doc_auto() {
@@ -89,6 +106,14 @@ safe_send_doc_auto() {
   if [ "$size" -le "$max" ]; then
     safe_send_doc_raw "$path" "${caption} <code>(${hsz})</code>"
     return 0
+  fi
+
+  # Check if file is too large for split upload
+  local num_parts max_parts=99
+  num_parts=$(( (size + max - 1) / max ))
+  if [ "$num_parts" -gt "$max_parts" ]; then
+    log_err "File too large for Telegram split upload (${num_parts} parts needed, max ${max_parts})"
+    return 1
   fi
 
   local base dir prefix
