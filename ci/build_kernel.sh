@@ -25,7 +25,7 @@ fi
 
 export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
 
-echo "SUCCESS=0" >> "$GITHUB_ENV"
+printf "SUCCESS=0\n" >> "$GITHUB_ENV"
 
 # Configure ccache with shared constant for maximum cache size
 ccache -M "${CCACHE_SIZE}" || printf "Warning: ccache configuration failed, continuing without cache\n" >&2
@@ -64,9 +64,9 @@ run_oldconfig() {
 cfg_tool() {
   if [ -f scripts/config ]; then
     chmod +x scripts/config || true
-    echo "scripts/config"
+    printf "scripts/config\n"
   else
-    echo ""
+printf "\n"
   fi
 }
 
@@ -75,7 +75,7 @@ set_kcfg_str() {
   local val="$2"
   # Sanitize inputs to prevent command injection
   if [[ ! "$key" =~ ^[A-Za-z0-9_]+$ ]]; then
-    echo "ERROR: Invalid key format: $key" >&2
+    printf "ERROR: Invalid key format: %s\n" "$key" >&2
     return 1
   fi
 
@@ -100,12 +100,12 @@ set_kcfg_bool() {
   local yn="$2"
   # Sanitize inputs to prevent command injection
   if [[ ! "$key" =~ ^[A-Za-z0-9_]+$ ]]; then
-    echo "ERROR: Invalid key format: $key" >&2
+    printf "ERROR: Invalid key format: %s\n" "$key" >&2
     return 1
   fi
-
+  
   if [[ ! "$yn" =~ ^[yn]$ ]]; then
-    echo "ERROR: Invalid yn value: $yn, must be 'y' or 'n'" >&2
+    printf "ERROR: Invalid yn value: %s, must be 'y' or 'n'\n" "$yn" >&2
     return 1
   fi
 
@@ -117,10 +117,10 @@ set_kcfg_bool() {
   else
     if [ "$yn" = "y" ]; then
       sed -i "s|^# CONFIG_${key} is not set|CONFIG_${key}=y|" out/.config 2>/dev/null || true
-      grep -q "^CONFIG_${key}=y" out/.config 2>/dev/null || echo "CONFIG_${key}=y" >> out/.config
+      grep -q "^CONFIG_${key}=y" out/.config 2>/dev/null || printf "CONFIG_%s=y\n" "$key" >> out/.config
     else
       sed -i "/^CONFIG_${key}=y$/d;/^CONFIG_${key}=m$/d" out/.config 2>/dev/null || true
-      grep -q "^# CONFIG_${key} is not set" out/.config 2>/dev/null || echo "# CONFIG_${key} is not set" >> out/.config
+      grep -q "^# CONFIG_${key} is not set" out/.config 2>/dev/null || printf "# CONFIG_%s is not set\n" "$key" >> out/.config
     fi
   fi
 }
@@ -181,10 +181,10 @@ apply_custom_kconfig_branding
 # CRITICAL: Apply NetHunter configuration BEFORE final olddefconfig
 # This ensures NetHunter configs are part of the final configuration
 apply_nethunter_config() {
-  echo ""
-  echo "=============================================="
-  echo "Applying NetHunter kernel configuration..."
-  echo "=============================================="
+  printf "\n"
+  printf "==============================================\n"
+  printf "Applying NetHunter kernel configuration...\n"
+  printf "==============================================\n"
   
   if [ "${NETHUNTER_ENABLED:-false}" != "true" ]; then
     printf "NetHunter configuration disabled (set NETHUNTER_ENABLED=true to enable)\n"
@@ -216,7 +216,7 @@ apply_nethunter_config() {
       rm -f "$nethunter_log"
     fi
   else
-    echo "Warning: NetHunter config script not found at ${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh"
+    printf "Warning: NetHunter config script not found at %s/ci/apply_nethunter_config.sh\n" "$GITHUB_WORKSPACE"
     return 0
   fi
   
