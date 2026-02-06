@@ -1,0 +1,250 @@
+name: Android Kernel CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_source:
+        description: Kernel source git URL
+        required: true
+        type: string
+        pattern: ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]+)+\.git$
+      kernel_branch:
+        description: Kernel branch
+        required: true
+        type: string
+        pattern: ^[a-zA-Z0-9/_.-]+$
+      device:
+        description: Device codename (for naming only)
+        required: true
+        type: string
+        pattern: ^[a-zA-Z0-9_-]+$
+      defconfig:
+        description: Kernel defconfig (e.g. vendor/moonstone_defconfig)
+        required: true
+        type: string
+        pattern: ^[a-zA-Z0-9/_.-]+$
+
+      enable_custom_config:
+        description: Enable custom Kconfig branding
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      config_localversion:
+        description: CONFIG_LOCALVERSION
+        required: false
+        default: "-CI"
+        type: string
+        pattern: ^[a-zA-Z0-9_+.-]*$
+      config_default_hostname:
+        description: CONFIG_DEFAULT_HOSTNAME
+        required: false
+        default: "CI Builder"
+        type: string
+        pattern: ^[a-zA-Z0-9 _.-]+$
+      config_uname_override_string:
+        description: CONFIG_UNAME_OVERRIDE_STRING
+        required: false
+        default: ""
+        type: string
+        pattern: ^[a-zA-Z0-9 _.-]*$
+      config_cc_version_text:
+        description: Optional override for CONFIG_CC_VERSION_TEXT (blank = auto)
+        required: false
+        default: ""
+        type: string
+        pattern: ^[a-zA-Z0-9 _.-]*$
+
+      enable_nethunter_config:
+        description: Enable NetHunter kernel configuration
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      nethunter_config_level:
+        description: NetHunter configuration level (basic includes USB/Bluetooth/networking, full adds WiFi drivers/SDR/CAN/NFS)
+        required: false
+        default: "basic"
+        type: choice
+        options: ["basic", "full"]
+
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    env:
+      ARCH: arm64
+      SUBARCH: arm64
+      TG_TOKEN: ${{ secrets.TG_TOKEN }}
+      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Make CI scripts executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ci/*.sh
+
+      - name: Run NetHunter Config Tests
+        if: inputs.enable_nethunter_config == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Running NetHunter configuration test suite..."
+          bash ci/test_nethunter_config.sh
+
+      - name: Install dependencies
+        shell: bash
+        run: ci/run_logged.sh ci/install_deps.sh
+
+      - name: Restore Proton Clang cache
+        uses: actions/cache@v4
+        with:
+          path: clang
+          key: proton-clang-v1
+
+      - name: Setup Proton Clang
+        shell: bash
+        run: ci/run_logged.sh ci/setup_proton_clang.sh
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-${{ runner.os }}-${{ inputs.kernel_branch }}-${{ inputs.defconfig }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ inputs.kernel_branch }}-${{ inputs.defconfig }}-
+            ccache-${{ runner.os }}-
+
+      - name: Clone Kernel Source
+        shell: bash
+        run: ci/run_logged.sh ci/clone_kernel.sh "${{ inputs.kernel_source }}" "${{ inputs.kernel_branch }}"
+
+      - name: Telegram Build Start
+        if: ${{ env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
+        shell: bash
+        env:
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
+        run: ci/telegram.sh start "${{ inputs.device }}" "${{ inputs.kernel_branch }}" "${{ inputs.defconfig }}" "" "" "" "${{ inputs.enable_custom_config }}" "${{ inputs.config_localversion }}" "${{ inputs.config_default_hostname }}" "${{ inputs.config_uname_override_string }}" "${{ inputs.config_cc_version_text }}"
+
+      - name: Build Kernel (First Attempt)
+        id: build_first
+        shell: bash
+        env:
+          CUSTOM_CONFIG_ENABLED: ${{ inputs.enable_custom_config }}
+          CFG_LOCALVERSION: ${{ inputs.config_localversion }}
+          CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
+          CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
+          CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
+        run: |
+          if ci/run_logged.sh ci/build_kernel.sh "${{ inputs.defconfig }}"; then
+            echo "FIRST_BUILD_SUCCESS=true" >> "$GITHUB_ENV"
+          else
+            echo "FIRST_BUILD_SUCCESS=false" >> "$GITHUB_ENV"
+            echo "First build attempt failed, will try patching Polly flags and retrying..."
+          fi
+
+      - name: Patch unsupported Polly flags (on build failure)
+        if: env.FIRST_BUILD_SUCCESS == 'false'
+        shell: bash
+        run: ci/run_logged.sh ci/patch_polly.sh
+
+      - name: Build Kernel (Retry After Polly Patch)
+        if: env.FIRST_BUILD_SUCCESS == 'false'
+        id: build_retry
+        shell: bash
+        env:
+          CUSTOM_CONFIG_ENABLED: ${{ inputs.enable_custom_config }}
+          CFG_LOCALVERSION: ${{ inputs.config_localversion }}
+          CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
+          CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
+          CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
+        run: ci/run_logged.sh ci/build_kernel.sh "${{ inputs.defconfig }}"
+
+      - name: Detect GKI
+        shell: bash
+        run: ci/run_logged.sh ci/detect_gki.sh
+
+      - name: Verify NetHunter Configuration
+        if: env.NETHUNTER_ENABLED == 'true'
+        shell: bash
+        env:
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
+        run: ci/run_logged.sh ci/verify_nethunter_config.sh "${{ inputs.nethunter_config_level }}"
+
+      - name: Ensure AnyKernel core exists
+        if: env.SUCCESS == '1'
+        shell: bash
+        run: ci/run_logged.sh ci/ensure_anykernel_core.sh
+
+      - name: Package AnyKernel ZIP
+        if: env.SUCCESS == '1'
+        shell: bash
+        env:
+          CUSTOM_CONFIG_ENABLED: ${{ inputs.enable_custom_config }}
+          CFG_LOCALVERSION: ${{ inputs.config_localversion }}
+          CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
+          CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
+          CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
+        run: ci/run_logged.sh ci/package_anykernel.sh "${{ inputs.device }}"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-${{ inputs.device }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            Kernel-*.zip
+            kernel/build.log
+            kernel/error.log
+          if-no-files-found: warn
+
+      - name: GitHub Release
+        if: env.SUCCESS == '1'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_id }}-${{ github.run_attempt }}
+          name: Kernel-${{ inputs.device }} (run ${{ github.run_id }}/${{ github.run_attempt }})
+          fail_on_unmatched_files: false
+          files: |
+            Kernel-*.zip
+            kernel/build.log
+
+      - name: Telegram Success
+        if: ${{ env.SUCCESS == '1' && env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
+        shell: bash
+        env:
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
+        run: ci/telegram.sh success "${{ inputs.device }}"
+
+      - name: Telegram Failure
+        if: ${{ env.SUCCESS == '0' && env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
+        shell: bash
+        env:
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
+        run: ci/telegram.sh failure "${{ inputs.device }}"
+
+      - name: Mark workflow failed if kernel build failed
+        if: env.SUCCESS == '0'
+        shell: bash
+        run: exit 1
