@@ -28,6 +28,11 @@ log_info() {
   printf "%s %s\n" "${prefix}" "$*"
 }
 
+log_warn() {
+  local prefix="${1:-[WARN]}"
+  printf "%s %s\n" "${prefix}" "$*" >&2
+}
+
 # ============================================
 # Path Validation Functions
 # ============================================
@@ -163,7 +168,7 @@ human_size() {
 }
 
 # Export functions for use in other scripts
-export -f log_err log_info log_error
+export -f log_err log_info log_error log_warn
 export -f validate_workspace validate_github_env
 export -f validate_git_url validate_defconfig validate_device_name validate_branch_name
 export -f sanitize_input pick_latest human_size
