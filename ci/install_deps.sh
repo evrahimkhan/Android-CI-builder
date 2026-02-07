@@ -11,7 +11,7 @@ fi
 
 # Function to run apt-get with or without sudo
 run_apt() {
-  if [ "$USE_SUDO" == "true" ]; then
+  if [ "$USE_SUDO" = "true" ]; then
     sudo "$@"
   else
     "$@"
