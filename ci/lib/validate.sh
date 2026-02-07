@@ -81,7 +81,7 @@ validate_github_env() {
 validate_git_url() {
   local url="$1"
 
-  if [[ ! "$url" =~ ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]+)+\.git$ ]]; then
+  if [[ ! "$url" =~ ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]+)+(\.git)?$ ]]; then
     printf "ERROR: Invalid git URL format: %s (must be HTTPS)\n" "$url" >&2
     return 1
   fi
