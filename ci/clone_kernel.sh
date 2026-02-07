@@ -20,14 +20,32 @@ if ! validate_branch_name "$BRANCH"; then
   exit 1
 fi
 
-# Clone to a temporary directory first, then move
-# This prevents partial deletion if clone fails
-TEMP_KERNEL_DIR="kernel_temp_$$"
+# Validate BRANCH parameter to prevent command injection
+# Sanitize branch name to prevent shell injection attacks
+if [[ -n "$BRANCH" ]]; then
+  printf "ERROR: Branch name cannot be empty\n" >&2
+  exit 1
+fi
 
-# Additional validation to prevent command injection in git operations
-# Ensure BRANCH doesn't contain git options or dangerous characters
-if [[ "$BRANCH" =~ ^- ]] || [[ "$BRANCH" =~ ^-- ]] || [[ "$BRANCH" =~ \.\. ]] || [[ "$BRANCH" =~ [[:space:]] ]]; then
-  printf "ERROR: Invalid branch name contains dangerous characters: %s\n" "$BRANCH" >&2
+# Additional security validation - prevent branch injection via --config parameter
+if [[ "$BRANCH" =~ ^\-+ ]] || [[ "$BRANCH" =~ ^\-\- ]]; then
+  printf "ERROR: Branch name contains dangerous flags\n" >&2
+  exit 1
+fi
+
+# Additional validation - prevent ref/log path injection
+if [[ "$BRANCH" =~ ^(\.\./|\.\.\.|\.\.\.) ]] || [[ "$BRANCH" =~ (\;|\&&|\|\|) ]]; then
+  printf "ERROR: Branch name contains path traversal characters\n" >&2
+  exit 1
+fi
+
+# Use argument array to prevent injection
+if git clone --depth=1 --branch "${BRANCH}" --single-branch "${SRC}" "${TEMP_KERNEL_DIR} 2>/dev/null; then
+  rm -rf kernel
+  mv "$TEMP_KERNEL_DIR" kernel
+else
+  rm -rf "$TEMP_KERNEL_DIR" 2>/dev/null || true
+  printf "ERROR: Git clone failed\n" >&2
   exit 1
 fi
 

@@ -58,17 +58,18 @@ test -d "$KERNELDIR"
 # Safe deletion with specific file patterns only
 rm -f anykernel/Image.gz-dtb anykernel/Image-dtb anykernel/Image.gz anykernel/Image.lz4 anykernel/Image anykernel/zImage 2>/dev/null || true
 
-# Use glob expansion for efficient kernel image detection
-# Try to find the most specific format first
-KIMG=""
-for pattern in "Image.gz-dtb" "Image-dtb" "Image.gz" "Image.lz4" "Image" "zImage"; do
-  for f in "${KERNELDIR}/${pattern}"*; do
-    if [ -f "$f" ]; then
-      KIMG=$(basename "$f")
-      cp -f "$f" "anykernel/"
-      break 2  # Break both loops
-    fi
-  done
+  # Use glob expansion for efficient kernel image detection with safety checks
+  # Try to find most specific format first
+  KIMG=""
+  for pattern in "Image.gz-dtb" "Image-dtb" "Image.gz" "Image.lz4" "Image" "zImage"; do
+    for f in "${KERNELDIR}/${pattern}"*; do
+      # Additional safety check - ensure file is not a symlink or dangerous
+      if [ -f "$f" ] && [ ! -L "$f" ] && [[ "$f" != *".."* ]]; then
+        KIMG=$(basename "$f")
+        cp -f "$f" "anykernel/"
+        break 2  # Found safe file, break both loops
+      fi
+    done
 done
 
 if [ -z "$KIMG" ]; then

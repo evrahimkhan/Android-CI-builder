@@ -78,6 +78,7 @@ jobs:
     env:
       ARCH: arm64
       SUBARCH: arm64
+      # Use environment-only secrets to prevent exposure in logs
       TG_TOKEN: ${{ secrets.TG_TOKEN }}
       TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       CCACHE_DIR: ${{ github.workspace }}/.ccache
