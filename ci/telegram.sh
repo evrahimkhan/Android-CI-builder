@@ -83,8 +83,7 @@ safe_send_msg() {
     -d parse_mode="HTML" \
     --data-urlencode text="$text" \
     >"$log_file" 2>&1 || {
-      log_err "sendMessage failed"
-      cat "$log_file" >> "${TELEGRAM_ERR_LOG:-/tmp/telegram_errors.log}" 2>/dev/null || true
+      log_err "sendMessage failed: $(cat "$log_file" 2>/dev/null || 'unknown')"
     }
   rm -f "$log_file" 2>/dev/null || true
 }
@@ -92,7 +91,7 @@ safe_send_msg() {
 safe_send_doc_raw() {
   local path="$1"
   local caption="$2"
-  [ -f "$path" ] || return 0
+  [ -f "$path" ] || { log_err "File not found: $path"; return 1; }
   local log_file="${TELEGRAM_LOG:-/tmp/telegram_$$.log}"
   curl -sS --max-time 60 \
     -F chat_id="${TG_CHAT_ID}" \
@@ -101,7 +100,7 @@ safe_send_doc_raw() {
     -F document=@"$path" \
     >"$log_file" 2>&1 || {
       log_err "sendDocument failed for: $path"
-      cat "$log_file" >> "${TELEGRAM_ERR_LOG:-/tmp/telegram_errors.log}" 2>/dev/null || true
+      log_err "API response: $(cat "$log_file" 2>/dev/null || 'unknown')"
       rm -f "$log_file" 2>/dev/null || true
       return 1
     }
@@ -111,7 +110,7 @@ safe_send_doc_raw() {
 safe_send_doc_auto() {
   local path="$1"
   local caption="$2"
-  [ -f "$path" ] || return 0
+  [ -f "$path" ] || { log_err "File not found: $path"; return 0; }
 
   # Use shared constant for Telegram max document size
   local size max hsz
@@ -120,7 +119,7 @@ safe_send_doc_auto() {
   hsz="$(human_size "$size")"
 
   if [ "$size" -le "$max" ]; then
-    safe_send_doc_raw "$path" "${caption} <code>(${hsz})</code>"
+    safe_send_doc_raw "$path" "${caption} <code>(${hsz})</code>" || return 0
     return 0
   fi
 
@@ -129,7 +128,7 @@ safe_send_doc_auto() {
   num_parts=$(( (size + max - 1) / max ))
   if [ "$num_parts" -gt "$max_parts" ]; then
     log_err "File too large for Telegram split upload (${num_parts} parts needed, max ${max_parts})"
-    return 1
+    return 0
   fi
 
   local base dir prefix
@@ -146,7 +145,7 @@ Uploading in parts…"
 
   local part
   for part in "${prefix}"*; do
-    safe_send_doc_raw "$part" "${caption} <b>(part)</b> <code>$(basename "$part")</code>"
+    safe_send_doc_raw "$part" "${caption} <b>(part)</b> <code>$(basename "$part")</code>" || return 0
   done
 
   safe_send_msg "✅ Parts uploaded for <code>${base}</code>
