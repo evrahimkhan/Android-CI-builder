@@ -4,8 +4,15 @@
 
 set -euo pipefail
 
+# Use canonical path to avoid issues with relative paths in GitHub Actions
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-$0}"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd -P)"
+# Fix: If we're inside the Android-CI-builder directory, don't double it
+if [[ "$SCRIPT_DIR" == *"Android-CI-builder/Android-CI-builder"* ]]; then
+  SCRIPT_DIR="${SCRIPT_DIR/Android-CI-builder\/Android-CI-builder/Android-CI-builder}"
+fi
+
 # Test configuration
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEST_DIR="${GITHUB_WORKSPACE:-/tmp}/.test_nethunter_$$"
 TEST_KERNEL_DIR="${TEST_DIR}/kernel"
 TEST_OUT_DIR="${TEST_KERNEL_DIR}/out"
