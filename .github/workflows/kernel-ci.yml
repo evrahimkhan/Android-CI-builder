@@ -7,7 +7,7 @@ on:
         description: Kernel source git URL
         required: true
         type: string
-        pattern: ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]+)+\.git$
+        pattern: ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]+)+(\.git)?$
       kernel_branch:
         description: Kernel branch
         required: true

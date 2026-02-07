@@ -93,7 +93,7 @@ safe_send_doc_raw() {
   local caption="$2"
   [ -f "$path" ] || { log_err "File not found: $path"; return 1; }
   local log_file="${TELEGRAM_LOG:-/tmp/telegram_$$.log}"
-  curl -sS --max-time 60 \
+  curl -sS --max-time 60 "${api}/sendDocument" \
     -F chat_id="${TG_CHAT_ID}" \
     --form-string parse_mode="HTML" \
     --form-string caption="$caption" \
