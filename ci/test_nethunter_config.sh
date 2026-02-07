@@ -107,11 +107,11 @@ assert_equals() {
 
 # Source the script under test (with mocked functions)
 source_nethunter_script() {
-  # Create a modified version for testing
-  local script_path="${SCRIPT_DIR}/../ci/apply_nethunter_config.sh"
+  # Script is in the same directory as this test script
+  local script_path="${SCRIPT_DIR}/apply_nethunter_config.sh"
 
   # Resolve canonical path to handle symlinks and ..
-  if command -v realpath &>/dev/null; then
+  if command -v realpath &>/dev/null && [ -e "$script_path" ]; then
     script_path="$(realpath "$script_path")"
   fi
 
