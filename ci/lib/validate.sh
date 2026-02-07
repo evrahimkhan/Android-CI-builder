@@ -188,5 +188,19 @@ human_size() {
 # ============================================
 # Export functions for use in other scripts
 # Functions are available by sourcing this library
-# DO NOT use 'export -f' as it can cause issues in some shells
+# export -f is required for functions to be available in subprocesses
+# when scripts are run via run_logged.sh
 # ============================================
+export -f log_err
+export -f log_info
+export -f log_error
+export -f log_warn
+export -f validate_workspace
+export -f validate_github_env
+export -f validate_git_url
+export -f validate_defconfig
+export -f validate_device_name
+export -f validate_branch_name
+export -f sanitize_input
+export -f pick_latest
+export -f human_size
