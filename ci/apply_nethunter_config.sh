@@ -44,6 +44,8 @@ detect_kernel_version() {
 get_kconfig_files() {
   if [ -z "$KCONFIG_FILES_CACHE" ]; then
     # Validate KERNEL_DIR path before searching
+    # SECURITY: Reject paths containing ".." to prevent path traversal attacks
+    # SECURITY: Require absolute paths (starting with /) to ensure we're in expected location
     if [[ ! "$KERNEL_DIR" =~ ^/ ]] || [[ "$KERNEL_DIR" == *".."* ]]; then
       log_error "Invalid KERNEL_DIR path: $KERNEL_DIR"
       return 1

@@ -118,13 +118,26 @@ jobs:
         shell: bash
         run: ci/run_logged.sh ci/setup_proton_clang.sh
 
+      - name: Validate cache key inputs
+        shell: bash
+        run: |
+          # Validate defconfig doesn't contain path traversal or injection patterns
+          DEFCONFIG="${{ inputs.defconfig }}"
+          if [[ "$DEFCONFIG" == *".."* ]] || [[ "$DEFCONFIG" == *";"* ]] || [[ "$DEFCONFIG" == *"|"* ]]; then
+            echo "ERROR: Invalid defconfig for cache key" >&2
+            exit 1
+          fi
+          # Sanitize defconfig for safe cache key usage
+          SAFE_DEFCONFIG=$(echo "$DEFCONFIG" | tr -cd 'a-zA-Z0-9/_.-')
+          echo "SAFE_DEFCONFIG=$SAFE_DEFCONFIG" >> "$GITHUB_ENV"
+
       - name: Restore ccache
         uses: actions/cache@v4
         with:
           path: .ccache
-          key: ccache-${{ runner.os }}-${{ inputs.kernel_branch }}-${{ inputs.defconfig }}-${{ github.sha }}
+          key: ccache-${{ runner.os }}-${{ inputs.kernel_branch }}-${{ env.SAFE_DEFCONFIG }}-${{ github.sha }}
           restore-keys: |
-            ccache-${{ runner.os }}-${{ inputs.kernel_branch }}-${{ inputs.defconfig }}-
+            ccache-${{ runner.os }}-${{ inputs.kernel_branch }}-${{ env.SAFE_DEFCONFIG }}-
             ccache-${{ runner.os }}-
 
       - name: Clone Kernel Source

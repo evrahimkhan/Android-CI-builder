@@ -302,7 +302,6 @@ ${nethunter_fail_info}
 📎 Sending error log…"
 
   safe_send_doc_auto "$ERR" "🧯 <b>error.log</b> • <code>${DEVICE}</code>"
-  exit 0
 fi
 
-exit 0
+# Script naturally exits here - no explicit exit needed
