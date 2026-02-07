@@ -9,12 +9,24 @@ fi
 
 DEVICE="${1:?device required}"
 
+# Set defaults for environment variables that may be undefined
+ZIP_NAME="${ZIP_NAME:-}"
+KIMG="${KIMG:-}"
+KERNEL_VERSION="${KERNEL_VERSION:-unknown}"
+KERNEL_TYPE="${KERNEL_TYPE:-unknown}"
+CLANG_VERSION="${CLANG_VERSION:-unknown}"
+CUSTOM_CONFIG_ENABLED="${CUSTOM_CONFIG_ENABLED:-false}"
+CFG_LOCALVERSION="${CFG_LOCALVERSION:--CI}"
+CFG_DEFAULT_HOSTNAME="${CFG_DEFAULT_HOSTNAME:-CI Builder}"
+CFG_UNAME_OVERRIDE_STRING="${CFG_UNAME_OVERRIDE_STRING:-}"
+CFG_CC_VERSION_TEXT="${CFG_CC_VERSION_TEXT:-auto}"
+
 
 
 # Determine kernel variant for ZIP naming and notifications
 # Based on NETHUNTER_ENABLED and NETHUNTER_CONFIG_LEVEL environment variables
-if [ "${NETHUNTER_ENABLED:-false}" == "true" ]; then
-  if [ "${NETHUNTER_CONFIG_LEVEL:-basic}" == "full" ]; then
+if [ "${NETHUNTER_ENABLED:-false}" = "true" ]; then
+  if [ "${NETHUNTER_CONFIG_LEVEL:-basic}" = "full" ]; then
     ZIP_VARIANT="full-nethunter"
   else
     ZIP_VARIANT="basic-nethunter"
@@ -58,19 +70,25 @@ test -d "$KERNELDIR"
 # Safe deletion with specific file patterns only
 rm -f anykernel/Image.gz-dtb anykernel/Image-dtb anykernel/Image.gz anykernel/Image.lz4 anykernel/Image anykernel/zImage 2>/dev/null || true
 
-  # Use glob expansion for efficient kernel image detection with safety checks
-  # Try to find most specific format first
-  KIMG=""
-  for pattern in "Image.gz-dtb" "Image-dtb" "Image.gz" "Image.lz4" "Image" "zImage"; do
-    for f in "${KERNELDIR}/${pattern}"*; do
-      # Additional safety check - ensure file is not a symlink or dangerous
-      if [ -f "$f" ] && [ ! -L "$f" ] && [[ "$f" != *".."* ]]; then
-        KIMG=$(basename "$f")
-        cp -f "$f" "anykernel/"
-        break 2  # Found safe file, break both loops
-      fi
-    done
+# Enable nullglob to handle no-match patterns safely
+shopt -s nullglob
+
+# Use glob expansion for efficient kernel image detection with safety checks
+# Try to find most specific format first
+KIMG=""
+for pattern in "Image.gz-dtb" "Image-dtb" "Image.gz" "Image.lz4" "Image" "zImage"; do
+  for f in "${KERNELDIR}/${pattern}"*; do
+    # Additional safety check - ensure file is not a symlink or dangerous
+    if [ -f "$f" ] && [ ! -L "$f" ] && [[ "$f" != *".."* ]]; then
+      KIMG=$(basename "$f")
+      cp -f "$f" "anykernel/"
+      break 2  # Found safe file, break both loops
+    fi
+  done
 done
+
+# Disable nullglob to restore default behavior
+shopt -u nullglob
 
 if [ -z "$KIMG" ]; then
   printf "No kernel image found in %s\n" "$KERNELDIR" >&2

@@ -155,6 +155,10 @@ jobs:
             echo "FIRST_BUILD_SUCCESS=true" >> "$GITHUB_ENV"
           else
             echo "FIRST_BUILD_SUCCESS=false" >> "$GITHUB_ENV"
+            # Create error log from build.log for first attempt failure
+            if [ -f kernel/build.log ]; then
+              cp kernel/build.log kernel/error.log 2>/dev/null || true
+            fi
             printf "First build attempt failed, will try patching Polly flags and retrying...\n"
           fi
 
@@ -176,6 +180,14 @@ jobs:
           NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
           NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: ci/run_logged.sh ci/build_kernel.sh "${{ inputs.defconfig }}"
+
+      - name: Telegram Retry Success
+        if: ${{ env.FIRST_BUILD_SUCCESS == 'false' && env.SUCCESS == '1' && env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
+        shell: bash
+        env:
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
+        run: ci/telegram.sh success "${{ inputs.device }}"
 
       - name: Detect GKI
         shell: bash

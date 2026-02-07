@@ -64,8 +64,13 @@ atomic_write_env "$GITHUB_ENV" "SUCCESS" "0"
 
 # Configure ccache with shared constant and available space check
 # Ensure we have enough disk space before setting cache size
-local available_space
 available_space=$(df "${GITHUB_WORKSPACE:-/tmp}" | awk 'NR==2 {print $4}' 2>/dev/null || echo "0")
+
+# Validate that available_space is numeric before arithmetic
+if ! [[ "$available_space" =~ ^[0-9]+$ ]]; then
+  printf "Warning: Could not determine available disk space, using default ccache size\n" >&2
+  available_space=$((10 * 1024 * 1024))  # Assume 10GB available
+fi
 
 # Convert CCACHE_SIZE to bytes for comparison (5G = 5*1024*1024 KB)
 local cache_size_kb

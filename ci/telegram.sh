@@ -22,29 +22,37 @@ CFG_UNAME_OVERRIDE_STRING="${11:-}"
 CFG_CC_VERSION_TEXT="${12:-}"
 
 # Validate inputs to prevent potential information disclosure or injection
-  if [[ ! "$MODE" =~ ^(start|success|failure)$ ]]; then
-    printf "ERROR: Invalid mode: %s\n" "$MODE" >&2
-    exit 1
-  fi
+if [[ ! "$MODE" =~ ^(start|success|failure)$ ]]; then
+  printf "ERROR: Invalid mode: %s\n" "$MODE" >&2
+  exit 1
+fi
 
-# Use shared validation functions for consistency and security
+  # Use shared validation functions for consistency and security
   if ! validate_device_name "$DEVICE"; then
     exit 1
   fi
-DEVICE=$(sanitize_input "$DEVICE" "a-zA-Z0-9._-")
+
+  # Check if sanitize_input function exists before calling
+  if declare -f sanitize_input >/dev/null 2>&1; then
+    DEVICE=$(sanitize_input "$DEVICE" "a-zA-Z0-9._-")
+  fi
 
   if [[ -n "$BRANCH" ]]; then
     if ! validate_branch_name "$BRANCH"; then
       exit 1
     fi
-    BRANCH=$(sanitize_input "$BRANCH" "a-zA-Z0-9/_.-")
+    if declare -f sanitize_input >/dev/null 2>&1; then
+      BRANCH=$(sanitize_input "$BRANCH" "a-zA-Z0-9/_.-")
+    fi
   fi
 
   if [[ -n "$DEFCONFIG" ]]; then
     if ! validate_defconfig "$DEFCONFIG"; then
       exit 1
     fi
-    DEFCONFIG=$(sanitize_input "$DEFCONFIG" "a-zA-Z0-9/_.-")
+    if declare -f sanitize_input >/dev/null 2>&1; then
+      DEFCONFIG=$(sanitize_input "$DEFCONFIG" "a-zA-Z0-9/_.-")
+    fi
   fi
 
 cd "${GITHUB_WORKSPACE:-$(pwd)}"

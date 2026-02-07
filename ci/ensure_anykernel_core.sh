@@ -56,11 +56,22 @@ if [ ! -f anykernel/tools/ak3-core.sh ]; then
   fi
   
   # Security: Verify repository identity and integrity
-  local remote_url commit_hash
+  local remote_url commit_hash commit_date
   remote_url=$(git remote get-url origin 2>/dev/null || echo "unknown")
   commit_hash=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
-  
-  printf "AnyKernel verification: URL=%s, Commit=%s\n" "$remote_url" "$commit_hash" >&2
+  commit_date=$(git log -1 --format=%ci HEAD 2>/dev/null || echo "unknown")
+
+  # Check commit age - warn if commit is older than 1 year
+  local commit_timestamp commit_age_days
+  commit_timestamp=$(git log -1 --format=%ct HEAD 2>/dev/null || echo "0")
+  current_timestamp=$(date +%s)
+  commit_age_days=$(( (current_timestamp - commit_timestamp) / 86400 ))
+
+  if [ "$commit_age_days" -gt 365 ]; then
+    printf "SECURITY NOTICE: AnyKernel commit is %d days old. Consider updating DEFAULT_COMMIT.\n" "$commit_age_days" >&2
+  fi
+
+  printf "AnyKernel verification: URL=%s, Commit=%s (age: %d days)\n" "$remote_url" "${commit_hash:0:8}" "$commit_age_days" >&2
   
   # Allow custom commits only if explicitly authorized (security override)
   if [[ "${ALLOW_ANYKERNEL_COMMIT:-false}" != "true" ]] && \
