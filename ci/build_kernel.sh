@@ -5,9 +5,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
   source "${SCRIPT_DIR}/lib/validate.sh"
+else
+  printf "ERROR: validate.sh not found at %s/lib/validate.sh\n" "$SCRIPT_DIR" >&2
+  exit 1
 fi
 if [[ -f "${SCRIPT_DIR}/lib/atomic_ops.sh" ]]; then
   source "${SCRIPT_DIR}/lib/atomic_ops.sh"
+else
+  printf "ERROR: atomic_ops.sh not found at %s/lib/atomic_ops.sh\n" "$SCRIPT_DIR" >&2
+  exit 1
 fi
 
 # CRITICAL: Cleanup handler to prevent resource leaks on script interruption
