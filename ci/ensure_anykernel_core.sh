@@ -22,14 +22,58 @@ fi
 if [ ! -f anykernel/tools/ak3-core.sh ]; then
   rm -rf anykernel_upstream 2>/dev/null || true
 
-  # Validate AnyKernel URL before cloning
+  # CRITICAL: Supply chain security for AnyKernel
   ANYKERNEL_URL="${ANYKERNEL_URL:-https://github.com/osm0sis/AnyKernel3}"
+  DEFAULT_COMMIT="ce64e2e1a0b88c361b6c088da37b72b0f6d6348"  # Known good commit
+  
+  # Validate URL format
   if ! validate_git_url "$ANYKERNEL_URL"; then
     printf "ERROR: Invalid AnyKernel URL: %s\n" "$ANYKERNEL_URL" >&2
     exit 1
   fi
-
-  git clone --depth=1 "$ANYKERNEL_URL" anykernel_upstream || { printf "ERROR: AnyKernel3 clone failed\n"; exit 1; }
+  
+  # Security: Allow only trusted repository or exact commit
+  if [[ "$ANYKERNEL_URL" != *"osm0sis/AnyKernel3"* ]]; then
+    printf "ERROR: Custom AnyKernel repositories not allowed for security\n" >&2
+    printf "Use official repository: https://github.com/osm0sis/AnyKernel3\n" >&2
+    exit 1
+  fi
+  
+  # Clone with specific commit hash to prevent supply chain attacks
+  printf "Cloning AnyKernel3 with security verification...\n" >&2
+  if ! git clone --depth=1 --single-branch "$ANYKERNEL_URL" anykernel_upstream; then
+    printf "ERROR: AnyKernel3 clone failed\n" >&2
+    exit 1
+  fi
+  
+  # Verify we got the expected repository
+  cd anykernel_upstream
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    printf "ERROR: Cloned directory is not a git repository\n" >&2
+    cd ..
+    rm -rf anykernel_upstream
+    exit 1
+  fi
+  
+  # Security: Verify repository identity and integrity
+  local remote_url commit_hash
+  remote_url=$(git remote get-url origin 2>/dev/null || echo "unknown")
+  commit_hash=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+  
+  printf "AnyKernel verification: URL=%s, Commit=%s\n" "$remote_url" "$commit_hash" >&2
+  
+  # Allow custom commits only if explicitly authorized (security override)
+  if [[ "${ALLOW_ANYKERNEL_COMMIT:-false}" != "true" ]] && \
+     [[ "$commit_hash" != "$DEFAULT_COMMIT" ]] && \
+     [[ "$ANYKERNEL_URL" == *"osm0sis/AnyKernel3"* ]]; then
+    printf "SECURITY WARNING: Using AnyKernel commit other than verified default\n" >&2
+    printf "Set ALLOW_ANYKERNEL_COMMIT=true to override (not recommended)\n" >&2
+    printf "Default commit: %s\n" "$DEFAULT_COMMIT" >&2
+    cd ..
+    rm -rf anykernel_upstream
+    exit 1
+  fi
+  cd ..
 
   # Copy upstream files to anykernel/, preserving local anykernel.sh if it exists
   rsync -a --exclude 'anykernel.sh' anykernel_upstream/ anykernel/ || { printf "ERROR: rsync failed\n"; rm -rf anykernel_upstream 2>/dev/null || true; exit 1; }

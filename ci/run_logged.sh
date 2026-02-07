@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Run logged script wrapper for CI operations
+# Usage: ./ci/run_logged.sh <command> [args...]
+# Executes command with comprehensive logging to build.log and error.log
 set -euo pipefail
 
 # Source shared validation library

@@ -9,8 +9,7 @@ fi
 
 DEVICE="${1:?device required}"
 
-# Simple error logging function (same as in telegram.sh)
-log_err() { printf "[package_anykernel] %s\n" "$*" >&2; }
+
 
 # Determine kernel variant for ZIP naming and notifications
 # Based on NETHUNTER_ENABLED and NETHUNTER_CONFIG_LEVEL environment variables
@@ -24,8 +23,23 @@ else
   ZIP_VARIANT="normal"
 fi
 
-# Export for Telegram notifications
-printf "ZIP_VARIANT=%s\n" "$ZIP_VARIANT" >> "$GITHUB_ENV"
+# Source atomic operations library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/lib/atomic_ops.sh" ]]; then
+  source "${SCRIPT_DIR}/lib/atomic_ops.sh"
+fi
+
+# Export for Telegram notifications with atomic operation
+if command -v atomic_write_env >/dev/null; then
+  atomic_write_env "$GITHUB_ENV" "ZIP_VARIANT" "$ZIP_VARIANT"
+  atomic_write_env "$GITHUB_ENV" "ZIP_NAME" "$ZIP_NAME"
+  atomic_write_env "$GITHUB_ENV" "KERNEL_IMAGE_FILE" "$KIMG"
+else
+  # Fallback (shouldn't happen in normal workflow)
+  printf "ZIP_VARIANT=%s\n" "$ZIP_VARIANT" >> "$GITHUB_ENV"
+  printf "ZIP_NAME=%s\n" "$ZIP_NAME" >> "$GITHUB_ENV"
+  printf "KERNEL_IMAGE_FILE=%s\n" "$KIMG" >> "$GITHUB_ENV"
+fi
 
 # Validate device name to prevent path traversal
 if ! validate_device_name "$DEVICE"; then
@@ -41,15 +55,20 @@ fi
 KERNELDIR="kernel/out/arch/arm64/boot"
 test -d "$KERNELDIR"
 
-rm -f anykernel/Image* anykernel/zImage 2>/dev/null || true
+# Safe deletion with specific file patterns only
+rm -f anykernel/Image.gz-dtb anykernel/Image-dtb anykernel/Image.gz anykernel/Image.lz4 anykernel/Image anykernel/zImage 2>/dev/null || true
 
+# Use glob expansion for efficient kernel image detection
+# Try to find the most specific format first
 KIMG=""
-for f in Image.gz-dtb Image-dtb Image.gz Image.lz4 Image zImage; do
-  if [ -f "${KERNELDIR}/${f}" ]; then
-    KIMG="$f"
-    cp -f "${KERNELDIR}/${f}" "anykernel/${f}"
-    break
-  fi
+for pattern in "Image.gz-dtb" "Image-dtb" "Image.gz" "Image.lz4" "Image" "zImage"; do
+  for f in "${KERNELDIR}/${pattern}"*; do
+    if [ -f "$f" ]; then
+      KIMG=$(basename "$f")
+      cp -f "$f" "anykernel/"
+      break 2  # Break both loops
+    fi
+  done
 done
 
 if [ -z "$KIMG" ]; then
@@ -102,8 +121,13 @@ printf "Built for %s | Linux %s | CI %s/%s\n" \
   "${DEVICE}" "${KERNEL_VERSION:-unknown}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \
   | zip -z "../${ZIP_NAME}" >/dev/null || log_err "Failed to add comment to ZIP"
 
-printf "ZIP_NAME=%s\n" "$ZIP_NAME" >> "$GITHUB_ENV"
-printf "KERNEL_IMAGE_FILE=%s\n" "$KIMG" >> "$GITHUB_ENV"
+if command -v safe_write_env >/dev/null; then
+  safe_write_env "ZIP_NAME" "$ZIP_NAME"
+  safe_write_env "KERNEL_IMAGE_FILE" "$KIMG"
+else
+  printf "ZIP_NAME=%s\n" "$ZIP_NAME" >> "$GITHUB_ENV"
+  printf "KERNEL_IMAGE_FILE=%s\n" "$KIMG" >> "$GITHUB_ENV"
+fi
 
 # No boot image variables to set since image repacking process has been removed
 # Only AnyKernel ZIP is generated for flashing

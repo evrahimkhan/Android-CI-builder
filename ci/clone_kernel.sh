@@ -23,6 +23,14 @@ fi
 # Clone to a temporary directory first, then move
 # This prevents partial deletion if clone fails
 TEMP_KERNEL_DIR="kernel_temp_$$"
+
+# Additional validation to prevent command injection in git operations
+# Ensure BRANCH doesn't contain git options or dangerous characters
+if [[ "$BRANCH" =~ ^- ]] || [[ "$BRANCH" =~ ^-- ]] || [[ "$BRANCH" =~ \.\. ]] || [[ "$BRANCH" =~ [[:space:]] ]]; then
+  printf "ERROR: Invalid branch name contains dangerous characters: %s\n" "$BRANCH" >&2
+  exit 1
+fi
+
 if git clone --depth=1 --branch "$BRANCH" --single-branch --tags "$SRC" "$TEMP_KERNEL_DIR"; then
   rm -rf kernel
   mv "$TEMP_KERNEL_DIR" kernel

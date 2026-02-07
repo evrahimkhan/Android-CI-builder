@@ -97,6 +97,12 @@ validate_defconfig() {
     return 1
   fi
 
+  # Additional length validation to prevent buffer overflow
+  if [ ${#defconfig} -gt 255 ]; then
+    printf "ERROR: Defconfig name too long (max 255 characters): %s\n" "$defconfig" >&2
+    return 1
+  fi
+
   return 0
 }
 
@@ -108,6 +114,12 @@ validate_device_name() {
     return 1
   fi
 
+  # Additional length validation for device names
+  if [ ${#device} -gt 64 ]; then
+    printf "ERROR: Device name too long (max 64 characters): %s\n" "$device" >&2
+    return 1
+  fi
+
   return 0
 }
 
@@ -116,6 +128,12 @@ validate_branch_name() {
 
   if [[ -n "$branch" ]] && ([[ ! "$branch" =~ ^[a-zA-Z0-9/_.-]+$ ]] || [[ "$branch" =~ \.\. ]]); then
     printf "ERROR: Invalid branch name format: %s\n" "$branch" >&2
+    return 1
+  fi
+
+  # Additional length validation for branch names
+  if [[ -n "$branch" ]] && [ ${#branch} -gt 255 ]; then
+    printf "ERROR: Branch name too long (max 255 characters): %s\n" "$branch" >&2
     return 1
   fi
 

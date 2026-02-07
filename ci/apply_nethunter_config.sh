@@ -14,6 +14,9 @@ fi
 # Source directory (should be in kernel/ after clone)
 KERNEL_DIR="${KERNEL_DIR:-kernel}"
 
+# Cache for Kconfig files to avoid repeated find operations
+KCONFIG_FILES_CACHE=""
+
 # Detect kernel version for conditional config application
 detect_kernel_version() {
   local kver
@@ -37,6 +40,22 @@ detect_kernel_version() {
   printf "Detected kernel version: %s.%s\n" "$KERNEL_MAJOR" "$KERNEL_MINOR"
 }
 
+# Get list of Kconfig files (cached for performance)
+get_kconfig_files() {
+  if [ -z "$KCONFIG_FILES_CACHE" ]; then
+    # Validate KERNEL_DIR path before searching
+    if [[ ! "$KERNEL_DIR" =~ ^/ ]] || [[ "$KERNEL_DIR" == *".."* ]]; then
+      log_error "Invalid KERNEL_DIR path: $KERNEL_DIR"
+      return 1
+    fi
+    
+    # Cache Kconfig files for efficiency
+    KCONFIG_FILES_CACHE=$(find "$KERNEL_DIR" -follow -name "Kconfig*" -type f -print0 2>/dev/null | tr '\0' '|')
+    KCONFIG_FILES_CACHE="${KCONFIG_FILES_CACHE%|}"  # Remove trailing pipe
+  fi
+  printf '%s' "$KCONFIG_FILES_CACHE"
+}
+
 # Check if config option exists in Kconfig files
 # Handles multiple Kconfig directives: config, menuconfig, choice, etc.
 check_config_exists() {
@@ -46,16 +65,24 @@ check_config_exists() {
     return 1
   fi
 
-  # Search in Kconfig files with multiple pattern variants
-  # Use while read with null delimiters to safely handle filenames
-  while IFS= read -r -d '' kconfig_file; do
-    # Validate path doesn't contain dangerous characters
-    if [[ "$kconfig_file" != *\;* ]] && [[ "$kconfig_file" != *\|* ]] && [[ "$kconfig_file" != *\`* ]] && [[ "$kconfig_file" != \$* ]]; then
+  # Use cached Kconfig file list for performance
+  local kconfig_files
+  kconfig_files=$(get_kconfig_files)
+  
+  if [ -z "$kconfig_files" ]; then
+    return 1
+  fi
+  
+  # Search in cached Kconfig files
+  local IFS='|'
+  for kconfig_file in $kconfig_files; do
+    # Validate path doesn't contain dangerous characters and stays within KERNEL_DIR
+    if [[ "$kconfig_file" != *\;* ]] && [[ "$kconfig_file" != *\|* ]] && [[ "$kconfig_file" != *\`* ]] && [[ "$kconfig_file" != \$* ]] && [[ "$kconfig_file" == "${KERNEL_DIR}"* ]]; then
       if grep -qE "^(config|menuconfig)[[:space:]]+${config_name}([[:space:]]|$)" "$kconfig_file" 2>/dev/null; then
         return 0  # Config exists
       fi
     fi
-  done < <(find "$KERNEL_DIR" -name "Kconfig*" -type f -print0 2>/dev/null)
+  done
 
   # Also check if it's already in .config (may be from defconfig)
   if [ -f "$KERNEL_DIR/out/.config" ]; then

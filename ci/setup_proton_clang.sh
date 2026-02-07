@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Proton Clang setup script for kernel compilation
+# Usage: ./ci/setup_proton_clang.sh [git_url] [branch]
+# Downloads and sets up Proton Clang toolchain for building Android kernels
 set -euo pipefail
 
 # Source shared validation library

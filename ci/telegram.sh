@@ -27,84 +27,134 @@ CFG_CC_VERSION_TEXT="${12:-}"
     exit 1
   fi
 
-# Sanitize device name to prevent injection - more restrictive validation
-  if [[ ! "$DEVICE" =~ ^[a-zA-Z0-9._-]+$ ]] || [[ "$DEVICE" =~ \.\. ]] || [[ "$DEVICE" =~ /\* ]] || [[ "$DEVICE" =~ \*/ ]]; then
-    printf "ERROR: Invalid device name format: %s\n" "$DEVICE" >&2
+# Use shared validation functions for consistency and security
+  if ! validate_device_name "$DEVICE"; then
     exit 1
   fi
-DEVICE=$(printf '%s\n' "$DEVICE" | sed 's/[^a-zA-Z0-9._-]/_/g')
+DEVICE=$(sanitize_input "$DEVICE" "a-zA-Z0-9._-")
 
-# Sanitize other inputs with similar validation
-  if [[ -n "$BRANCH" ]] && ([[ ! "$BRANCH" =~ ^[a-zA-Z0-9/_.-]+$ ]] || [[ "$BRANCH" =~ \.\. ]] || [[ "$BRANCH" =~ /\* ]] || [[ "$BRANCH" =~ \*/ ]]); then
-    printf "ERROR: Invalid branch name format: %s\n" "$BRANCH" >&2
-    exit 1
+  if [[ -n "$BRANCH" ]]; then
+    if ! validate_branch_name "$BRANCH"; then
+      exit 1
+    fi
+    BRANCH=$(sanitize_input "$BRANCH" "a-zA-Z0-9/_.-")
   fi
-BRANCH=$(printf '%s\n' "$BRANCH" | sed 's/[^a-zA-Z0-9/_.-]/_/g')
 
-  if [[ -n "$DEFCONFIG" ]] && ([[ ! "$DEFCONFIG" =~ ^[a-zA-Z0-9/_.-]+$ ]] || [[ "$DEFCONFIG" =~ \.\. ]] || [[ "$DEFCONFIG" =~ /\* ]] || [[ "$DEFCONFIG" =~ \*/ ]]); then
-    printf "ERROR: Invalid defconfig format: %s\n" "$DEFCONFIG" >&2
-    exit 1
+  if [[ -n "$DEFCONFIG" ]]; then
+    if ! validate_defconfig "$DEFCONFIG"; then
+      exit 1
+    fi
+    DEFCONFIG=$(sanitize_input "$DEFCONFIG" "a-zA-Z0-9/_.-")
   fi
-DEFCONFIG=$(printf '%s\n' "$DEFCONFIG" | sed 's/[^a-zA-Z0-9/_.-]/_/g')
 
 cd "${GITHUB_WORKSPACE:-$(pwd)}"
 
 # Validate TG_TOKEN before constructing API URL
 if [[ -z "${TG_TOKEN:-}" ]]; then
-  log_err "TG_TOKEN not set, skipping Telegram notification"
+  printf "[telegram] TG_TOKEN not set, skipping Telegram notification\n" >&2
   exit 0
 fi
 
 # Validate token format (Bot API tokens are like 123456:ABC-DEF1234ghIkl-zyx57WzyvAwdsDEFG)
-if [[ ! "$TG_TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]]; then
-  log_err "Invalid TG_TOKEN format"
+# Enhanced validation: proper length and character set
+if [[ ! "$TG_TOKEN" =~ ^[0-9]{5,}:[A-Za-z0-9_-]{30,}$ ]]; then
+  log_err "Invalid TG_TOKEN format - expected format: numbers:alphanumeric_underscores_dashes"
+  log_err "Token must be at least 35 characters total (ID: 5+ chars, Secret: 30+ chars)"
   exit 1
 fi
 
 # Validate TG_CHAT_ID
 if [[ -z "${TG_CHAT_ID:-}" ]]; then
-  log_err "TG_CHAT_ID not set"
+  printf "[telegram] TG_CHAT_ID not set\n" >&2
   exit 1
 fi
 if [[ ! "$TG_CHAT_ID" =~ ^-?[0-9]+$ ]]; then
-  log_err "Invalid TG_CHAT_ID format (must be numeric)"
+  printf "[telegram] Invalid TG_CHAT_ID format (must be numeric)\n" >&2
   exit 1
 fi
 
 api="https://api.telegram.org/bot${TG_TOKEN}"
 
-log_err() { echo "[telegram] $*" >&2; }
+
 
 safe_send_msg() {
   local text="$1"
-  local log_file="${TELEGRAM_LOG:-/tmp/telegram_msg_$$.log}"
-  curl -sS --max-time 30 -X POST "${api}/sendMessage" \
-    -d chat_id="${TG_CHAT_ID}" \
-    -d parse_mode="HTML" \
-    --data-urlencode text="$text" \
-    >"$log_file" 2>&1 || {
-      log_err "sendMessage failed: $(cat "$log_file" 2>/dev/null || 'unknown')"
-    }
+  local log_file
+  log_file=$(mktemp -t telegram_msg_XXXXXX.log) || {
+    log_err "Failed to create secure temp file for Telegram message"
+    return 1
+  }
+  
+  local retry_count=0
+  local max_retries=3
+  
+  while [ $retry_count -lt $max_retries ]; do
+    if curl -sS --max-time 30 -X POST "${api}/sendMessage" \
+      -d chat_id="${TG_CHAT_ID}" \
+      -d parse_mode="HTML" \
+      --data-urlencode text="$text" \
+      >"$log_file" 2>&1; then
+      # Success - check response for API errors
+      if grep -q '"ok":true' "$log_file" 2>/dev/null; then
+        rm -f "$log_file" 2>/dev/null || true
+        return 0
+      else
+        log_err "Telegram API error: $(cat "$log_file" 2>/dev/null || 'unknown')"
+      fi
+    else
+      log_err "sendMessage failed (attempt $((retry_count + 1))/$max_retries): $(cat "$log_file" 2>/dev/null || 'unknown')"
+    fi
+    
+    retry_count=$((retry_count + 1))
+    if [ $retry_count -lt $max_retries ]; then
+      sleep $((retry_count * 2))  # Exponential backoff
+    fi
+  done
+  
   rm -f "$log_file" 2>/dev/null || true
+  return 1
 }
 
 safe_send_doc_raw() {
   local path="$1"
   local caption="$2"
   [ -f "$path" ] || { log_err "File not found: $path"; return 1; }
-  local log_file="${TELEGRAM_LOG:-/tmp/telegram_$$.log}"
-  curl -sS --max-time 60 "${api}/sendDocument" \
-    -F chat_id="${TG_CHAT_ID}" \
-    --form-string parse_mode="HTML" \
-    --form-string caption="$caption" \
-    -F document=@"$path" \
-    >"$log_file" 2>&1 || {
-      log_err "sendDocument failed for: $path"
-      log_err "API response: $(cat "$log_file" 2>/dev/null || 'unknown')"
-      rm -f "$log_file" 2>/dev/null || true
-      return 1
-    }
+  local log_file
+  log_file=$(mktemp -t telegram_doc_XXXXXX.log) || {
+    log_err "Failed to create secure temp file for Telegram document"
+    return 1
+  }
+  
+  local retry_count=0
+  local max_retries=2  # Fewer retries for large files
+  
+  while [ $retry_count -lt $max_retries ]; do
+    if curl -sS --max-time 60 "${api}/sendDocument" \
+      -F chat_id="${TG_CHAT_ID}" \
+      --form-string parse_mode="HTML" \
+      --form-string caption="$caption" \
+      -F document=@"$path" \
+      >"$log_file" 2>&1; then
+      # Success - check response for API errors
+      if grep -q '"ok":true' "$log_file" 2>/dev/null; then
+        rm -f "$log_file" 2>/dev/null || true
+        return 0
+      else
+        log_err "Telegram API error for document: $(cat "$log_file" 2>/dev/null || 'unknown')"
+      fi
+    else
+      log_err "sendDocument failed for: $path (attempt $((retry_count + 1))/$max_retries)"
+    fi
+    
+    retry_count=$((retry_count + 1))
+    if [ $retry_count -lt $max_retries ]; then
+      sleep $((retry_count * 3))  # Exponential backoff for file uploads
+    fi
+  done
+  
+  log_err "API response: $(cat "$log_file" 2>/dev/null || 'unknown')"
   rm -f "$log_file" 2>/dev/null || true
+  return 1
 }
 
 safe_send_doc_auto() {
@@ -124,7 +174,8 @@ safe_send_doc_auto() {
   fi
 
   # Check if file is too large for split upload
-  local num_parts max_parts=99
+  # Telegram API limit for documents is 50MB, we split to stay well under
+  local num_parts max_parts=50  # Conservative limit to avoid API issues
   num_parts=$(( (size + max - 1) / max ))
   if [ "$num_parts" -gt "$max_parts" ]; then
     log_err "File too large for Telegram split upload (${num_parts} parts needed, max ${max_parts})"
@@ -136,7 +187,10 @@ safe_send_doc_auto() {
   dir="$(dirname "$path")"
   prefix="${dir}/${base}.part-"
 
-  rm -f "${prefix}"* 2>/dev/null || true
+  # Safe deletion: list files specifically instead of wildcard
+  for part in "${prefix}"*; do
+    [ -f "$part" ] && rm -f "$part" 2>/dev/null || true
+  done
   timeout 300 split -b "${max}" -d -a 2 "$path" "${prefix}" || return 0
 
   safe_send_msg "<b>📦 Large file</b>

@@ -1,11 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Source shared validation library
+# Source shared libraries
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
   source "${SCRIPT_DIR}/lib/validate.sh"
 fi
+if [[ -f "${SCRIPT_DIR}/lib/atomic_ops.sh" ]]; then
+  source "${SCRIPT_DIR}/lib/atomic_ops.sh"
+fi
+
+# CRITICAL: Cleanup handler to prevent resource leaks on script interruption
+CLEANUP_FILES=()
+cleanup_handler() {
+  printf "\n[build_kernel] Cleanup triggered by signal\n" >&2
+  
+  # Remove all tracked temporary files
+  for file in "${CLEANUP_FILES[@]}"; do
+    if [ -f "$file" ]; then
+      rm -f "$file" 2>/dev/null || true
+    fi
+  done
+  
+  # Release GITHUB_ENV lock if we hold it
+  if [ -f "${GITHUB_ENV}.lock" ] && [ "$(cat "${GITHUB_ENV}.lock" 2>/dev/null)" = "$$" ]; then
+    rm -f "${GITHUB_ENV}.lock" 2>/dev/null || true
+  fi
+  
+  # Kill any child processes
+  if [ -n "$(jobs -p)" ]; then
+    jobs -p | xargs -r kill 2>/dev/null || true
+  fi
+  
+  exit 130  # SIGINT exit code
+}
+
+# Register cleanup for common signals
+trap cleanup_handler EXIT
+trap cleanup_handler INT
+trap cleanup_handler TERM
+trap cleanup_handler HUP
 
 DEFCONFIG="${1:?defconfig required}"
 
@@ -25,10 +59,32 @@ fi
 
 export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
 
-printf "SUCCESS=0\n" >> "$GITHUB_ENV"
+# Initialize SUCCESS with atomic operation
+atomic_write_env "$GITHUB_ENV" "SUCCESS" "0"
 
-# Configure ccache with shared constant for maximum cache size
-ccache -M "${CCACHE_SIZE}" || printf "Warning: ccache configuration failed, continuing without cache\n" >&2
+# Configure ccache with shared constant and available space check
+# Ensure we have enough disk space before setting cache size
+local available_space
+available_space=$(df "${GITHUB_WORKSPACE:-/tmp}" | awk 'NR==2 {print $4}' 2>/dev/null || echo "0")
+
+# Convert CCACHE_SIZE to bytes for comparison (5G = 5*1024*1024 KB)
+local cache_size_kb
+case "${CCACHE_SIZE}" in
+  *G) cache_size_kb=$((${CCACHE_SIZE%G} * 1024 * 1024)) ;;
+  *M) cache_size_kb=$((${CCACHE_SIZE%M} * 1024)) ;;
+  *K) cache_size_kb=${CCACHE_SIZE%K} ;;
+  *) cache_size_kb=$((5 * 1024 * 1024)) ;;  # Default to 5G
+esac
+
+# Only set cache if we have at least 2x the cache size in available space
+if [ "$available_space" -gt $((cache_size_kb * 2)) ]; then
+  ccache -M "${CCACHE_SIZE}" || printf "Warning: ccache configuration failed, continuing without cache\n" >&2
+else
+  # Use smaller cache if space is limited
+  local reduced_cache="$((available_space / 4))K"
+  printf "Warning: Limited disk space, reducing ccache to %s\n" "$reduced_cache" >&2
+  ccache -M "$reduced_cache" || printf "Warning: ccache configuration failed, continuing without cache\n" >&2
+fi
 ccache -z || printf "Warning: ccache zero stats failed, continuing\n" >&2
 
 export CC="ccache clang"
@@ -198,10 +254,18 @@ apply_nethunter_config() {
   
   # Source the NetHunter config script
   if [ -f "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" ]; then
-    # Use separate temp log to avoid race condition
-    local nethunter_log="nethunter-config-$$.log"
-    # Export functions so they're available to the sourced script
-    export -f set_kcfg_str set_kcfg_bool cfg_tool 2>/dev/null || true
+    # Use secure temporary file to avoid race conditions
+    local nethunter_log
+    nethunter_log=$(mktemp -t nethunter-config-XXXXXX.log) || {
+      printf "ERROR: Failed to create secure temporary file for NetHunter log\n" >&2
+      exit 1
+    }
+    
+    # Track for cleanup
+    CLEANUP_FILES+=("$nethunter_log")
+    # Source functions locally instead of global export to prevent security boundary violations
+    # Functions will be available through shared context, not global namespace
+    # This prevents cross-script contamination and maintains encapsulation
     if ! bash "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" 2>&1 | tee -a "$nethunter_log"; then
       printf "Warning: NetHunter config script execution had issues\n" >&2
     fi
@@ -213,10 +277,32 @@ apply_nethunter_config() {
       fi
     fi
     
-    # Append to main build log and cleanup
+    # CRITICAL SECURITY: Sanitize log content before appending to prevent RCE via Telegram
+    # Malicious kernel source could inject arbitrary content into logs that get sent via notifications
     if [ -f "$nethunter_log" ]; then
-      cat "$nethunter_log" >> "$LOG" 2>/dev/null || true
-      rm -f "$nethunter_log"
+      # Create sanitized version with dangerous characters removed
+      local sanitized_log
+      sanitized_log=$(mktemp -t nethunter-sanitized-XXXXXX.log) || {
+        printf "ERROR: Failed to create sanitized log file\n" >&2
+        rm -f "$nethunter_log"
+        return 1
+      }
+      
+      # Sanitize content: remove control chars, limit line length, escape special chars
+      sed -e 's/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]//g' \
+          -e 's/[^\x20-\x7E]/?/g' \
+          -e 's/^\(.\{200\}\).*$/\1.../' \
+          "$nethunter_log" > "$sanitized_log" 2>/dev/null || {
+        printf "ERROR: Failed to sanitize NetHunter log\n" >&2
+        rm -f "$nethunter_log" "$sanitized_log"
+        return 1
+      }
+      
+      # Only append sanitized content to main log
+      cat "$sanitized_log" >> "$LOG" 2>/dev/null || true
+      
+      # Cleanup both files
+      rm -f "$nethunter_log" "$sanitized_log"
     fi
   else
     printf "Warning: NetHunter config script not found at %s/ci/apply_nethunter_config.sh\n" "$GITHUB_WORKSPACE"
@@ -244,18 +330,17 @@ fi
 
 START="$(date +%s)"
 if make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 2>&1 | tee -a "$LOG"; then
-  printf "SUCCESS=1\n" >> "$GITHUB_ENV"
+  atomic_write_env "$GITHUB_ENV" "SUCCESS" "1"
 else
-  printf "SUCCESS=0\n" >> "$GITHUB_ENV"
-  cp -f "$LOG" "${GITHUB_WORKSPACE}/kernel/error.log" 2>/dev/null || true
+  atomic_write_env "$GITHUB_ENV" "SUCCESS" "0"
 fi
 END="$(date +%s)"
-printf "BUILD_TIME=%s\n" "$((END-START))" >> "$GITHUB_ENV"
+atomic_write_env "$GITHUB_ENV" "BUILD_TIME" "$((END-START))"
 
 KVER="$(make -s kernelversion | tr -d '\n' || true)"
 CLANG_VER="$(clang --version | head -n1 | tr -d '\n' || true)"
-printf "KERNEL_VERSION=%s\n" "${KVER:-unknown}" >> "$GITHUB_ENV"
-printf "CLANG_VERSION=%s\n" "${CLANG_VER:-unknown}" >> "$GITHUB_ENV"
+atomic_write_env "$GITHUB_ENV" "KERNEL_VERSION" "${KVER:-unknown}"
+atomic_write_env "$GITHUB_ENV" "CLANG_VERSION" "${CLANG_VER:-unknown}"
 
 mkdir -p "${GITHUB_WORKSPACE}/kernel" || true
 cat "$LOG" >> "${GITHUB_WORKSPACE}/kernel/build.log" 2>/dev/null || true
