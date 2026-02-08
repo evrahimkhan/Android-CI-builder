@@ -53,8 +53,9 @@ for f in Image.gz-dtb Image-dtb Image.gz Image.lz4 Image zImage; do
 done
 
 if [ -z "$KIMG" ]; then
-  printf "No kernel image found in %s\n" "$KERNELDIR" >&2
-  ls -la "$KERNELDIR" || true
+  printf "ERROR: No kernel image found in %s\n" "$KERNELDIR" >&2
+  printf "Available files:\n" >&2
+  ls -la "$KERNELDIR" >&2 || true
   exit 1
 fi
 

@@ -27,7 +27,9 @@ FINAL_KERNEL_DIR="kernel"
 
 # Cleanup function for temp directory
 cleanup_temp() {
-  rm -rf "$TEMP_KERNEL_DIR" 2>/dev/null || true
+  if ! rm -rf "$TEMP_KERNEL_DIR" 2>/dev/null; then
+    printf "Warning: Failed to clean up temp directory: %s\n" "$TEMP_KERNEL_DIR" >&2
+  fi
 }
 
 trap cleanup_temp EXIT

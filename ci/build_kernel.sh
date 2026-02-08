@@ -50,8 +50,17 @@ fi
 export KBUILD_BUILD_USER="android"
 export KBUILD_BUILD_HOST="android-build"
 
+# Validate kernel directory exists before changing
+if [ ! -d "kernel" ]; then
+  printf "ERROR: kernel directory not found\n" >&2
+  exit 1
+fi
 cd kernel
-mkdir -p out
+
+# Validate out directory path
+if [ ! -d "out" ]; then
+  mkdir -p out || { printf "ERROR: Failed to create out directory\n" >&2; exit 1; }
+fi
 
 # Set up log path (use LOG for consistency with run_logged.sh)
 LOG="${GITHUB_WORKSPACE:-$(pwd)}/kernel/build.log"
@@ -263,10 +272,21 @@ CLANG_VER="$(clang --version | head -n1 | tr -d '\n' || true)"
 printf "KERNEL_VERSION=%s\n" "${KVER:-unknown}" >> "$GITHUB_ENV"
 printf "CLANG_VERSION=%s\n" "${CLANG_VER:-unknown}" >> "$GITHUB_ENV"
 
-mkdir -p "${GITHUB_WORKSPACE}/kernel" || true
-cat "$LOG" >> "${GITHUB_WORKSPACE}/kernel/build.log" 2>/dev/null || true
+mkdir -p "${GITHUB_WORKSPACE}/kernel" 2>/dev/null || {
+  printf "ERROR: Failed to create kernel directory\n" >&2
+}
 
-  ccache -s || true
+# Validate workspace path before using
+if [[ -z "${GITHUB_WORKSPACE:-}" ]] || [[ ! "$GITHUB_WORKSPACE" =~ ^/ ]]; then
+  printf "ERROR: Invalid GITHUB_WORKSPACE path\n" >&2
+fi
+
+# Safely append log with error handling
+if [ -f "$LOG" ] && [[ "$GITHUB_WORKSPACE" =~ ^/ ]] && [[ "$GITHUB_WORKSPACE" != *".."* ]]; then
+  cat "$LOG" >> "${GITHUB_WORKSPACE}/kernel/build.log" 2>/dev/null || printf "Warning: Failed to append to build.log\n" >&2
+fi
+
+ccache -s || true
   # Exit based on SUCCESS variable (used by GitHub Actions workflow)
   # Direct script execution will see the correct exit code
   if [[ "${SUCCESS:-0}" == "1" ]]; then

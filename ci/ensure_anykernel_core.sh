@@ -32,14 +32,24 @@ if [ ! -f anykernel/tools/ak3-core.sh ]; then
   git clone --depth=1 "$ANYKERNEL_URL" anykernel_upstream || { printf "ERROR: AnyKernel3 clone failed\n"; exit 1; }
 
   # Copy upstream files to anykernel/, preserving local anykernel.sh if it exists
-  rsync -a --exclude 'anykernel.sh' anykernel_upstream/ anykernel/ || { printf "ERROR: rsync failed\n"; rm -rf anykernel_upstream 2>/dev/null || true; exit 1; }
+  if ! rsync -a --exclude 'anykernel.sh' anykernel_upstream/ anykernel/; then
+    printf "ERROR: rsync failed\n" >&2
+    rm -rf anykernel_upstream 2>/dev/null || printf "Warning: Failed to clean up temp directory\n" >&2
+    exit 1
+  fi
 
   # If no local anykernel.sh exists, copy from upstream
   if [ ! -f anykernel/anykernel.sh ]; then
-    cp anykernel_upstream/anykernel.sh anykernel/anykernel.sh || { printf "ERROR: Failed to copy anykernel.sh\n"; rm -rf anykernel_upstream 2>/dev/null || true; exit 1; }
+    if ! cp anykernel_upstream/anykernel.sh anykernel/anykernel.sh; then
+      printf "ERROR: Failed to copy anykernel.sh\n" >&2
+      rm -rf anykernel_upstream 2>/dev/null || printf "Warning: Failed to clean up temp directory\n" >&2
+      exit 1
+    fi
   fi
 
-  rm -rf anykernel_upstream 2>/dev/null || true
+  if ! rm -rf anykernel_upstream; then
+    printf "Warning: Failed to clean up temp directory\n" >&2
+  fi
 fi
 
 # Verify anykernel.sh exists after setup
@@ -48,12 +58,16 @@ if [ ! -f anykernel/anykernel.sh ]; then
   exit 1
 fi
 
-# Verify the file exists and is legitimate before setting permissions
-if [ -f anykernel/anykernel.sh ]; then
-  # Check if it's a regular file (not a symlink to somewhere unsafe)
-  if [ -L anykernel/anykernel.sh ] || [ ! -r anykernel/anykernel.sh ]; then
-    printf "ERROR: anykernel/anykernel.sh is not a safe regular file\n" >&2
-    exit 1
+  # Verify the file exists and is legitimate before setting permissions
+  if [ -f anykernel/anykernel.sh ]; then
+    # Check if it's a regular file (not a symlink to somewhere unsafe)
+    if [ -L anykernel/anykernel.sh ]; then
+      printf "ERROR: anykernel/anykernel.sh is a symlink, not safe\n" >&2
+      exit 1
+    fi
+    if [ ! -r anykernel/anykernel.sh ]; then
+      printf "ERROR: anykernel/anykernel.sh is not readable\n" >&2
+      exit 1
+    fi
+    chmod 755 anykernel/anykernel.sh || log_warn "Failed to set permissions on anykernel.sh"
   fi
-  chmod 755 anykernel/anykernel.sh || true
-fi
