@@ -33,9 +33,8 @@ printf "===== [%s] RUN: %s\n" "$(ts)" "$*" | tee -a "$LOG"
   set -e
 
 if [ "$rc" -ne 0 ]; then
-  {
-    printf "===== [%s] ERROR rc=%s in: %s\n" "$(ts)" "$rc" "$*"
-  } | tee -a "$LOG" | tee -a "$ERR"
+  # Write error message to both files
+  printf "===== [%s] ERROR rc=%s in: %s\n" "$(ts)" "$rc" "$*" | tee -a "$LOG" >> "$ERR"
 fi
 
 exit "$rc"

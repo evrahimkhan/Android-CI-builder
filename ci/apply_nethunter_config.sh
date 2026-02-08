@@ -175,9 +175,10 @@ set_kcfg_str() {
     return 1
   fi
   
-  # Escape special characters in value to prevent injection
+  # Comprehensive escaping for sed - escape ALL special regex characters and shell metacharacters
   local sanitized_val
-  sanitized_val=$(printf '%s\n' "$val" | sed 's/\\/\\\\/g; s/"/\\"/g') || { log_error "Failed to sanitize value"; return 1; }
+  sanitized_val=$(printf '%s\n' "$val" | \
+    sed 's/\\/\\\\/g; s/"/\\"/g; s/\$/\\$/g; s/`/\\`/g; s/;/\\;/g; s/&/\\&/g; s/|/\\|/g; s/</\\</g; s/>/\\>/g; s/(/\\(/g; s/)/\\)/g; s/\[/\\[/g; s/\]/\\]/g; s/{/\\{/g; s/}/\\}/g; s/\*/\\*/g; s/?/\\?/g; s/+/\\+/g; s/\^/\\^/g; s/\./\\./g; s/\//\\\//g') || { log_error "Failed to sanitize value"; return 1; }
   
   local tool
   tool="$KERNEL_DIR/scripts/config"
