@@ -111,7 +111,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: clang
-          key: proton-clang-v1
+          key: proton-clang-${{ inputs.kernel_source }}-${{ inputs.kernel_branch }}-${{ hashFiles('.github/workflows/**') }}
+          restore-keys: |
+            proton-clang-${{ inputs.kernel_source }}-${{ inputs.kernel_branch }}-
+            proton-clang-${{ inputs.kernel_source }}-
+            proton-clang-
 
       - name: Setup Proton Clang
         shell: bash
@@ -215,7 +219,7 @@ jobs:
 
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: kernel-${{ inputs.device }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -226,7 +230,7 @@ jobs:
 
       - name: GitHub Release
         if: env.SUCCESS == '1'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.5.0
         with:
           tag_name: build-${{ github.run_id }}-${{ github.run_attempt }}
           name: Kernel-${{ inputs.device }} (run ${{ github.run_id }}/${{ github.run_attempt }})
@@ -264,7 +268,12 @@ jobs:
           NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: ci/telegram.sh failure "${{ inputs.device }}"
 
-      - name: Mark workflow failed if kernel build failed
-        if: env.SUCCESS == '0'
+      - name: Mark workflow status
         shell: bash
-        run: exit 1
+        run: |
+          if [ "${{ env.SUCCESS }}" == "1" ]; then
+            echo "✅ Kernel build completed successfully"
+          else
+            echo "❌ Kernel build failed"
+            exit 1
+          fi

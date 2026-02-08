@@ -114,7 +114,14 @@ safe_send_doc_auto() {
 
   # Use shared constant for Telegram max document size
   local size max hsz
-  size="$(stat -c%s "$path" 2>/dev/null || echo 0)"
+  # Use portable file size detection (works on Linux, macOS, BSD)
+  if command -v stat &>/dev/null; then
+    size="$(stat -c%s "$path" 2>/dev/null)" || size="$(stat -f%z "$path" 2>/dev/null)" || size=0
+  else
+    # Fallback using wc -c
+    size="$(wc -c < "$path" 2>/dev/null)" || size=0
+  fi
+  size="${size:-0}"
   max="${TELEGRAM_MAX_DOC_SIZE:-${TELEGRAM_MAX_SIZE}}"
   hsz="$(human_size "$size")"
 
