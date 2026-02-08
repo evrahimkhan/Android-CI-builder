@@ -13,12 +13,11 @@ if ! validate_github_env; then
 fi
 
 if [ -f kernel/out/.config ]; then
-  if grep -qE '^CONFIG_GKI=(y|n)' kernel/out/.config 2>/dev/null; then
-    if grep -q '^CONFIG_GKI=y' kernel/out/.config; then
-      printf "KERNEL_TYPE=GKI\n" >> "$GITHUB_ENV"
-    else
-      printf "KERNEL_TYPE=NON-GKI\n" >> "$GITHUB_ENV"
-    fi
+  # Use grep -F for fixed-string matching to avoid regex issues
+  if grep -qF 'CONFIG_GKI=y' kernel/out/.config 2>/dev/null; then
+    printf "KERNEL_TYPE=GKI\n" >> "$GITHUB_ENV"
+  elif grep -qF 'CONFIG_GKI=n' kernel/out/.config 2>/dev/null; then
+    printf "KERNEL_TYPE=NON-GKI\n" >> "$GITHUB_ENV"
   else
     printf "KERNEL_TYPE=UNKNOWN (GKI config unreadable)\n" >> "$GITHUB_ENV"
   fi
