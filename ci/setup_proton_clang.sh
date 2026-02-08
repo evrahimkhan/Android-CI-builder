@@ -21,5 +21,6 @@ if ! validate_branch_name "$PROTON_CLANG_BRANCH"; then
 fi
 
 if [ ! -x clang/bin/clang ]; then
-  git clone --depth=1 --branch "$PROTON_CLANG_BRANCH" --single-branch --tags "$PROTON_CLANG_URL" clang || { printf "ERROR: Proton Clang clone failed\n"; exit 1; }
+  # Clone without --single-branch to allow tag fetching from all branches
+  git clone --depth=1 --branch "$PROTON_CLANG_BRANCH" "$PROTON_CLANG_URL" clang || { printf "ERROR: Proton Clang clone failed\n"; exit 1; }
 fi

@@ -19,7 +19,15 @@ run_apt() {
 }
 
 run_apt apt-get update || { printf "ERROR: apt-get update failed\n"; exit 1; }
-run_apt apt-get install -y \
-  bc bison build-essential ccache curl flex git \
-  libelf-dev libssl-dev make python3 rsync unzip wget zip zstd \
-  dwarves xz-utils perl || { printf "ERROR: apt-get install failed\n"; exit 1; }
+
+# Install packages in groups for better error isolation
+CORE_PACKAGES="bc bison build-essential ccache curl flex git"
+KERNEL_PACKAGES="libelf-dev libssl-dev make python3 rsync"
+EXTRA_PACKAGES="unzip wget zip zstd dwarves xz-utils perl"
+
+for pkg_group in "$CORE_PACKAGES" "$KERNEL_PACKAGES" "$EXTRA_PACKAGES"; do
+  run_apt apt-get install -y $pkg_group || {
+    printf "ERROR: Failed to install packages: %s\n" "$pkg_group" >&2
+    exit 1
+  }
+done

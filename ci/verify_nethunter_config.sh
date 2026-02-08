@@ -32,14 +32,20 @@ check_config() {
 
     ((CONFIGS_TOTAL++)) || true
 
-    # Escape special regex characters in config name
+    # Escape all special regex characters for grep -E usage
     local escaped_config
-    escaped_config=$(printf '%s\n' "$config_name" | sed 's/[][\.*^$()+?{|]/\\&/g')
+    escaped_config=$(printf '%s\n' "$config_name" | sed 's/[][\.*^$()+?{|}/\\&/g; s/\//\\\//g; s/-/\\-/g; s/=/\\=/g')
 
-    if grep -qE "^#?\s*CONFIG_${escaped_config}=" "$CONFIG_FILE" 2>/dev/null; then
+    # Use grep -F for fixed-string matching (safer than -E)
+    if grep -qF "CONFIG_${config_name}=" "$CONFIG_FILE" 2>/dev/null; then
         ((CONFIGS_FOUND++)) || true
         return 0
     else
+        # Also check for commented-out configs
+        if grep -qF "# CONFIG_${config_name} is not set" "$CONFIG_FILE" 2>/dev/null; then
+            ((CONFIGS_FOUND++)) || true
+            return 0
+        fi
         if [ "$is_critical" == "true" ]; then
             MISSING_CRITICAL+=("$config_name")
         else
