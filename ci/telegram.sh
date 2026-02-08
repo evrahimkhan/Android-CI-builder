@@ -78,13 +78,15 @@ log_err() { echo "[telegram] $*" >&2; }
 safe_send_msg() {
   local text="$1"
   local log_file="${TELEGRAM_LOG:-/tmp/telegram_msg_$$.log}"
+  local curl_result=0
   curl -sS --max-time 30 -X POST "${api}/sendMessage" \
     -d chat_id="${TG_CHAT_ID}" \
     -d parse_mode="HTML" \
     --data-urlencode text="$text" \
-    >"$log_file" 2>&1 || {
-      log_err "sendMessage failed: $(cat "$log_file" 2>/dev/null || 'unknown')"
-    }
+    >"$log_file" 2>&1 || curl_result=$?
+  if [ "$curl_result" -ne 0 ]; then
+    log_err "sendMessage failed (curl exit $curl_result): $(cat "$log_file" 2>/dev/null || 'network error or timeout')"
+  fi
   rm -f "$log_file" 2>/dev/null || true
 }
 
@@ -93,17 +95,19 @@ safe_send_doc_raw() {
   local caption="$2"
   [ -f "$path" ] || { log_err "File not found: $path"; return 1; }
   local log_file="${TELEGRAM_LOG:-/tmp/telegram_$$.log}"
+  local curl_result=0
   curl -sS --max-time 60 "${api}/sendDocument" \
     -F chat_id="${TG_CHAT_ID}" \
     --form-string parse_mode="HTML" \
     --form-string caption="$caption" \
     -F document=@"$path" \
-    >"$log_file" 2>&1 || {
-      log_err "sendDocument failed for: $path"
-      log_err "API response: $(cat "$log_file" 2>/dev/null || 'unknown')"
-      rm -f "$log_file" 2>/dev/null || true
-      return 1
-    }
+    >"$log_file" 2>&1 || curl_result=$?
+  if [ "$curl_result" -ne 0 ]; then
+    log_err "sendDocument failed for: $path (curl exit $curl_result)"
+    log_err "API response: $(cat "$log_file" 2>/dev/null || 'network error or timeout')"
+    rm -f "$log_file" 2>/dev/null || true
+    return 1
+  fi
   rm -f "$log_file" 2>/dev/null || true
 }
 

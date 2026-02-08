@@ -17,13 +17,20 @@ KERNEL_DIR="${KERNEL_DIR:-kernel}"
 # Detect kernel version for conditional config application
 detect_kernel_version() {
   local kver
-  if [ -d "$KERNEL_DIR" ]; then
-    kver="$(cd "$KERNEL_DIR" && make -s kernelversion 2>/dev/null | head -n1 | tr -d '\n')" || true
+
+  # Validate kernel directory exists
+  if [ ! -d "$KERNEL_DIR" ]; then
+    log_error "Kernel directory not found: $KERNEL_DIR"
+    return 1
   fi
+
+  # Detect kernel version
+  kver="$(cd "$KERNEL_DIR" && make -s kernelversion 2>/dev/null | head -n1 | tr -d '\n')"
 
   # Allow explicit override via environment variable
   if [[ -n "${FORCE_KERNEL_VERSION:-}" ]]; then
     kver="$FORCE_KERNEL_VERSION"
+    log_info "Using forced kernel version: $kver"
   fi
 
   if [ -z "$kver" ] || [ "$kver" = "" ] || [[ ! "$kver" =~ ^[0-9]+\.[0-9]+ ]]; then
@@ -405,7 +412,9 @@ restore_kernel_config() {
 
 # Cleanup backup on success
 cleanup_kernel_config_backup() {
-  rm -f "$KERNEL_DIR/out/.config.backup.nethunter" 2>/dev/null || true
+  if ! rm -f "$KERNEL_DIR/out/.config.backup.nethunter" 2>/dev/null; then
+    log_warn "Failed to remove kernel config backup (may not exist)"
+  fi
 }
 
 # Validate NetHunter configuration level

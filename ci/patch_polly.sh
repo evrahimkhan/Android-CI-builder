@@ -3,6 +3,15 @@ set -euo pipefail
 
 export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
 
+# Temp file for Polly test - cleaned up on any exit
+temp_file=""
+cleanup_temp() {
+  if [[ -n "$temp_file" ]] && [[ -f "$temp_file" ]]; then
+    rm -f "$temp_file" 2>/dev/null || true
+  fi
+}
+trap cleanup_temp EXIT
+
 # Check if any Makefiles contain Polly flags using fixed-string search
 if grep -RIn --include='Makefile*' --include='*.mk' --include='*.make' -F '-polly-' kernel >/dev/null 2>&1; then
   printf "Found Polly flags in kernel, attempting to patch...\n"
@@ -17,7 +26,7 @@ if grep -RIn --include='Makefile*' --include='*.mk' --include='*.make' -F '-poll
           -e 's/[[:space:]]-polly-[^[:space:]]+//g' \
           "$file" 2>/dev/null || true
       fi
-    done < <(find kernel -maxdepth 5 -type f \( -name 'Makefile' -o -name 'Makefile.*' -o -name '*.mk' -o -name '*.make' \) -print0 2>/dev/null)
+  done < <(find kernel -maxdepth 5 -type f \( -name 'Makefile' -o -name 'Makefile.*' -o -name '*.mk' -o -name '*.make' \) -print0 2>/dev/null)
   fi
-  rm -f "$temp_file" 2>/dev/null || true
+  # Cleanup handled by trap EXIT
 fi
