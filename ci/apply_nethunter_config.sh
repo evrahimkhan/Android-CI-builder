@@ -20,20 +20,32 @@ detect_kernel_version() {
   if [ -d "$KERNEL_DIR" ]; then
     kver="$(cd "$KERNEL_DIR" && make -s kernelversion 2>/dev/null | head -n1 | tr -d '\n')" || true
   fi
-  
-  if [ -z "$kver" ] || [ "$kver" = "" ]; then
-    log_warn "Could not detect kernel version, assuming 4.4"
-    kver="4.4"
+
+  # Allow explicit override via environment variable
+  if [[ -n "${FORCE_KERNEL_VERSION:-}" ]]; then
+    kver="$FORCE_KERNEL_VERSION"
   fi
-  
+
+  if [ -z "$kver" ] || [ "$kver" = "" ] || [[ ! "$kver" =~ ^[0-9]+\.[0-9]+ ]]; then
+    log_error "Could not detect kernel version: '${kver:-unknown}'"
+    log_error "Set FORCE_KERNEL_VERSION=x.y environment variable to override"
+    return 1
+  fi
+
   # Parse major and minor versions
   local major minor
   major=$(echo "$kver" | cut -d. -f1)
   minor=$(echo "$kver" | cut -d. -f2)
-  
+
+  # Validate parsed values are numeric
+  if [[ ! "$major" =~ ^[0-9]+$ ]] || [[ ! "$minor" =~ ^[0-9]+$ ]]; then
+    log_error "Invalid kernel version format: $kver"
+    return 1
+  fi
+
   export KERNEL_MAJOR="${major:-4}"
   export KERNEL_MINOR="${minor:-4}"
-  
+
   printf "Detected kernel version: %s.%s\n" "$KERNEL_MAJOR" "$KERNEL_MINOR"
 }
 
@@ -46,14 +58,16 @@ check_config_exists() {
     return 1
   fi
 
-  # Search in Kconfig files with multiple pattern variants
-  # Use while read with null delimiters to safely handle filenames
+  # Validate config_name format first (defense in depth)
+  if [[ ! "$config_name" =~ ^[A-Za-z0-9_]+$ ]]; then
+    return 1
+  fi
+
+  # Search in Kconfig files with validated config name
   while IFS= read -r -d '' kconfig_file; do
-    # Validate path doesn't contain dangerous characters
-    if [[ "$kconfig_file" != *\;* ]] && [[ "$kconfig_file" != *\|* ]] && [[ "$kconfig_file" != *\`* ]] && [[ "$kconfig_file" != \$* ]]; then
-      if grep -qE "^(config|menuconfig)[[:space:]]+${config_name}([[:space:]]|$)" "$kconfig_file" 2>/dev/null; then
-        return 0  # Config exists
-      fi
+    # Use grep with fixed strings for safer searching (no regex injection possible)
+    if grep -F "config ${config_name}" "$kconfig_file" 2>/dev/null; then
+      return 0  # Config exists
     fi
   done < <(find "$KERNEL_DIR" -name "Kconfig*" -type f -print0 2>/dev/null)
 

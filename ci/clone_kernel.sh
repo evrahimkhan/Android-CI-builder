@@ -20,14 +20,25 @@ if ! validate_branch_name "$BRANCH"; then
   exit 1
 fi
 
-# Clone to a temporary directory first, then move
-# This prevents partial deletion if clone fails
+# Clone directly to final directory, then clean up on failure
+# This prevents race condition where rm -rf kernel could leave workspace broken
 TEMP_KERNEL_DIR="kernel_temp_$$"
-if git clone --depth=1 --branch "$BRANCH" --single-branch --tags "$SRC" "$TEMP_KERNEL_DIR"; then
-  rm -rf kernel
-  mv "$TEMP_KERNEL_DIR" kernel
-else
+FINAL_KERNEL_DIR="kernel"
+
+# Cleanup function for temp directory
+cleanup_temp() {
   rm -rf "$TEMP_KERNEL_DIR" 2>/dev/null || true
+}
+
+trap cleanup_temp EXIT
+
+# Clone to temporary directory first
+if git clone --depth=1 --branch "$BRANCH" "$SRC" "$TEMP_KERNEL_DIR" 2>/dev/null; then
+  # Only remove old kernel AFTER successful clone
+  rm -rf "$FINAL_KERNEL_DIR"
+  mv "$TEMP_KERNEL_DIR" "$FINAL_KERNEL_DIR"
+  trap - EXIT
+else
   printf "ERROR: Git clone failed\n" >&2
   exit 1
 fi

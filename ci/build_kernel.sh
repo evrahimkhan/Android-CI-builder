@@ -42,8 +42,11 @@ export STRIP=llvm-strip
 
 # Prevent interactive configuration prompts
 export KCONFIG_NOTIMESTAMP=1
+# Use ISO 8601 timestamp for reproducibility, fallback to build start time
 export KERNELRELEASE=""
-export KBUILD_BUILD_TIMESTAMP=""
+if [[ -z "${KBUILD_BUILD_TIMESTAMP:-}" ]]; then
+  export KBUILD_BUILD_TIMESTAMP="$(date -u +'%Y-%m-%d %H:%M:%S')"
+fi
 export KBUILD_BUILD_USER="android"
 export KBUILD_BUILD_HOST="android-build"
 
@@ -201,7 +204,9 @@ apply_nethunter_config() {
     # Use separate temp log to avoid race condition
     local nethunter_log="nethunter-config-$$.log"
     # Export functions so they're available to the sourced script
-    export -f set_kcfg_str set_kcfg_bool cfg_tool 2>/dev/null || true
+    export -f set_kcfg_str set_kcfg_bool cfg_tool 2>/dev/null || {
+      log_warn "Function export failed - may indicate bash version incompatibility"
+    }
     if ! bash "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" 2>&1 | tee -a "$nethunter_log"; then
       printf "Warning: NetHunter config script execution had issues\n" >&2
     fi
@@ -260,5 +265,11 @@ printf "CLANG_VERSION=%s\n" "${CLANG_VER:-unknown}" >> "$GITHUB_ENV"
 mkdir -p "${GITHUB_WORKSPACE}/kernel" || true
 cat "$LOG" >> "${GITHUB_WORKSPACE}/kernel/build.log" 2>/dev/null || true
 
-ccache -s || true
-exit 0
+  ccache -s || true
+  # Exit based on SUCCESS variable (used by GitHub Actions workflow)
+  # Direct script execution will see the correct exit code
+  if [[ "${SUCCESS:-0}" == "1" ]]; then
+    exit 0
+  else
+    exit 1
+  fi
