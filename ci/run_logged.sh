@@ -22,19 +22,14 @@ printf "===== [%s] RUN: %s\n" "$(ts)" "$*" | tee -a "$LOG"
 
   set +e
   # Execute command directly without eval - pass arguments safely
-  # Capture PIPESTATUS immediately after the pipe to ensure correct exit code
-  local cmd_status=0
-  "$@" 2>&1 | tee -a "$LOG" || cmd_status=$?
-  rc="${PIPESTATUS[0]}"
-  # Use the command's exit status if available, otherwise PIPESTATUS
-  if [[ "$cmd_status" -ne 0 ]]; then
-    rc="$cmd_status"
-  fi
+  # Simplified status capture that avoids unbound variable issues
+  local rc=0
+  "$@" 2>&1 | tee -a "$LOG" || rc=$?
   set -e
 
 if [ "$rc" -ne 0 ]; then
-  # Write error message to both files
-  printf "===== [%s] ERROR rc=%s in: %s\n" "$(ts)" "$rc" "$*" | tee -a "$LOG" >> "$ERR"
+  # Write error message to both log files
+  printf "===== [%s] ERROR rc=%s in: %s\n" "$(ts)" "$rc" "$*" | tee -a "$LOG" | tee -a "$ERR" || true
 fi
 
 exit "$rc"
