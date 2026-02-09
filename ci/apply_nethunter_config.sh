@@ -12,7 +12,14 @@ fi
 # Automatically detects kernel version and applies compatible configurations
 
 # Source directory (should be in kernel/ after clone)
-KERNEL_DIR="${KERNEL_DIR:-kernel}"
+# Use GITHUB_WORKSPACE to resolve absolute path
+if [[ -z "${KERNEL_DIR:-}" ]]; then
+  if [[ -n "${GITHUB_WORKSPACE:-}" ]]; then
+    KERNEL_DIR="${GITHUB_WORKSPACE}/kernel"
+  else
+    KERNEL_DIR="kernel"
+  fi
+fi
 
 # Detect kernel version for conditional config application
 detect_kernel_version() {
@@ -509,9 +516,9 @@ if [ -d "$KERNEL_DIR" ]; then
   cd "$KERNEL_DIR"
 fi
 
-# Check if .config exists
-if [ ! -f "out/.config" ]; then
-  log_error "Kernel config not found at out/.config"
+# Check if .config exists using absolute path
+if [ ! -f "${KERNEL_DIR}/out/.config" ]; then
+  log_error "Kernel config not found at ${KERNEL_DIR}/out/.config"
   exit 1
 fi
 
