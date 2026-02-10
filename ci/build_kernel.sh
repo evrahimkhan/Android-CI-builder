@@ -215,10 +215,10 @@ apply_nethunter_config() {
   printf "==============================================\n"
   
   # Temporarily disable nounset to handle potentially unset env vars
-  set +u
+  set +u 2>/dev/null
   local nethunter_enabled="${NETHUNTER_ENABLED:-false}"
   local nethunter_level="${NETHUNTER_CONFIG_LEVEL:-basic}"
-  set -u
+  set -u 2>/dev/null
   
   # Debug: Show raw values
   printf "DEBUG: NETHUNTER_ENABLED='%s'\n" "$nethunter_enabled"
