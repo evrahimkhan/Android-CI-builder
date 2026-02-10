@@ -13,18 +13,13 @@ fi
 
 # Source directory (should be in kernel/ after clone)
 # Use GITHUB_WORKSPACE to resolve absolute path
-echo "DEBUG: GITHUB_WORKSPACE='${GITHUB_WORKSPACE:-unset}'" >&2
-echo "DEBUG: KERNEL_DIR initial='${KERNEL_DIR:-unset}'" >&2
 if [[ -z "${KERNEL_DIR:-}" ]]; then
   if [[ -n "${GITHUB_WORKSPACE:-}" ]]; then
     KERNEL_DIR="${GITHUB_WORKSPACE}/kernel"
-    echo "DEBUG: KERNEL_DIR set to '${KERNEL_DIR}'" >&2
   else
     KERNEL_DIR="kernel"
-    echo "DEBUG: KERNEL_DIR fallback to 'kernel'" >&2
   fi
 fi
-echo "DEBUG: Final KERNEL_DIR='${KERNEL_DIR}'" >&2
 
 # Detect kernel version for conditional config application
 detect_kernel_version() {
@@ -523,13 +518,7 @@ fi
 
 # Check if .config exists using absolute path
 if [ ! -f "${KERNEL_DIR}/out/.config" ]; then
-  log_error "Kernel config not found at ${KERNEL_DIR}/out/.config (cwd=$(pwd))"
-  # List what IS in out/ to help debug
-  if [ -d "${KERNEL_DIR}/out" ]; then
-    log_error "Contents of ${KERNEL_DIR}/out/: $(ls -la "${KERNEL_DIR}/out/" 2>&1 | head -5)"
-  else
-    log_error "Directory ${KERNEL_DIR}/out/ does not exist"
-  fi
+  log_error "Kernel config not found at ${KERNEL_DIR}/out/.config"
   exit 1
 fi
 
