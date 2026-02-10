@@ -62,15 +62,15 @@ if [ ! -d "out" ]; then
   mkdir -p out || { printf "ERROR: Failed to create out directory\n" >&2; exit 1; }
 fi
 
-# Set up log path (use LOG for consistency with run_logged.sh)
+# Set up log path - write to file AND stdout for GitHub Actions
 LOG="${GITHUB_WORKSPACE:-$(pwd)}/kernel/build.log"
 
 run_oldconfig() {
   set +e
   set +o pipefail
   # Use yes "" to auto-answer prompts with defaults, but also redirect stdin to avoid hanging
-  yes "" | make O=out oldconfig 2>/dev/null || true
-  local rc=$?
+  yes "" | make O=out oldconfig 2>&1 | tee -a "$LOG" || true
+  local rc=${PIPESTATUS[0]:-$?}
   set -o pipefail
   set -e
   return "$rc"
@@ -169,11 +169,11 @@ apply_custom_kconfig_branding() {
   fi
 
   set_kcfg_bool LOCALVERSION_AUTO n
-  if ! make O=out olddefconfig; then
+  if ! make O=out olddefconfig 2>&1 | tee -a "$LOG"; then
     # If olddefconfig fails, use silentoldconfig to avoid interactive prompts
-    if ! make O=out silentoldconfig; then
+    if ! make O=out silentoldconfig 2>&1 | tee -a "$LOG"; then
       # Fallback to oldconfig with yes "" if both fail
-      run_oldconfig || true
+      yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a "$LOG" || true
     fi
   fi
 }
@@ -181,12 +181,12 @@ apply_custom_kconfig_branding() {
 # Apply defconfig with proper error handling to avoid interactive prompts
 printf "===== [$(date +%Y-%m-%d\ %H:%M:%S)] Running defconfig: make O=out %s =====\n" "$DEFCONFIG" | tee -a "$LOG"
 if ! make O=out "$DEFCONFIG" 2>&1 | tee -a "$LOG"; then
-  printf "Warning: Initial defconfig failed, trying olddefconfig...\n"
+  printf "Warning: Initial defconfig failed, trying olddefconfig...\n" | tee -a "$LOG"
   if ! make O=out olddefconfig 2>&1 | tee -a "$LOG"; then
-    printf "Warning: olddefconfig failed, trying silentoldconfig...\n"
+    printf "Warning: olddefconfig failed, trying silentoldconfig...\n" | tee -a "$LOG"
     if ! make O=out silentoldconfig 2>&1 | tee -a "$LOG"; then
-      printf "Warning: silentoldconfig failed, using oldconfig with defaults...\n"
-      yes "" 2>/dev/null | run_oldconfig 2>&1 | tee -a "$LOG" || true
+      printf "Warning: silentoldconfig failed, using oldconfig with defaults...\n" | tee -a "$LOG"
+      yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a "$LOG" || true
     fi
   fi
 fi
@@ -202,6 +202,9 @@ apply_nethunter_config() {
   printf "Applying NetHunter kernel configuration...\n"
   printf "==============================================\n"
   
+  printf "NETHUNTER_ENABLED=%s\n" "${NETHUNTER_ENABLED:-unset}"
+  printf "NETHUNTER_CONFIG_LEVEL=%s\n" "${NETHUNTER_CONFIG_LEVEL:-unset}"
+  
   if [ "${NETHUNTER_ENABLED:-false}" != "true" ]; then
     printf "NetHunter configuration disabled (set NETHUNTER_ENABLED=true to enable)\n"
     return 0
@@ -211,30 +214,20 @@ apply_nethunter_config() {
   
   # Source the NetHunter config script
   if [ -f "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" ]; then
-    # Use separate temp log to avoid race condition
-    local nethunter_log="nethunter-config-$$.log"
     # Export functions so they're available to the sourced script
     export -f set_kcfg_str set_kcfg_bool cfg_tool 2>/dev/null || {
-      log_warn "Function export failed - may indicate bash version incompatibility"
+      printf "Warning: Function export failed - may indicate bash version incompatibility\n" | tee -a "$LOG"
     }
-    if ! bash "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" 2>&1 | tee -a "$nethunter_log"; then
-      printf "Warning: NetHunter config script execution had issues\n" >&2
-    fi
+    bash "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" 2>&1 | tee -a "$LOG"
     
-    printf "\nResolving NetHunter configuration dependencies...\n"
-    if ! make O=out olddefconfig 2>&1 | tee -a "$nethunter_log"; then
-      if ! make O=out silentoldconfig 2>&1 | tee -a "$nethunter_log"; then
-        yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a "$nethunter_log" || true
+    printf "\nResolving NetHunter configuration dependencies...\n" | tee -a "$LOG"
+    if ! make O=out olddefconfig 2>&1 | tee -a "$LOG"; then
+      if ! make O=out silentoldconfig 2>&1 | tee -a "$LOG"; then
+        yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a "$LOG" || true
       fi
     fi
-    
-    # Append to main build log and cleanup
-    if [ -f "$nethunter_log" ]; then
-      cat "$nethunter_log" >> "$LOG" 2>/dev/null || true
-      rm -f "$nethunter_log"
-    fi
   else
-    printf "Warning: NetHunter config script not found at %s/ci/apply_nethunter_config.sh\n" "$GITHUB_WORKSPACE"
+    printf "Warning: NetHunter config script not found at %s/ci/apply_nethunter_config.sh\n" "$GITHUB_WORKSPACE" | tee -a "$LOG"
     return 0
   fi
   
@@ -248,13 +241,12 @@ apply_nethunter_config
 # Final olddefconfig to ensure all configurations are properly set
 printf "\n===== [$(date +%Y-%m-%d\ %H:%M:%S)] Running final olddefconfig =====\n"
 if ! make O=out olddefconfig 2>&1 | tee -a "$LOG"; then
-  printf "Warning: Final olddefconfig failed, trying silentoldconfig...\n"
+  printf "Warning: Final olddefconfig failed, trying silentoldconfig...\n" | tee -a "$LOG"
   if ! make O=out silentoldconfig 2>&1 | tee -a "$LOG"; then
-    printf "Warning: silentoldconfig failed, using oldconfig with defaults...\n"
+    printf "Warning: silentoldconfig failed, using oldconfig with defaults...\n" | tee -a "$LOG"
     yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a "$LOG" || true
   fi
 fi
-
 
 
 START="$(date +%s)"
@@ -272,6 +264,7 @@ CLANG_VER="$(clang --version | head -n1 | tr -d '\n' || true)"
 printf "KERNEL_VERSION=%s\n" "${KVER:-unknown}" >> "$GITHUB_ENV"
 printf "CLANG_VERSION=%s\n" "${CLANG_VER:-unknown}" >> "$GITHUB_ENV"
 
+# Create kernel directory and copy logs
 mkdir -p "${GITHUB_WORKSPACE}/kernel" 2>/dev/null || {
   printf "ERROR: Failed to create kernel directory\n" >&2
 }
@@ -281,9 +274,12 @@ if [[ -z "${GITHUB_WORKSPACE:-}" ]] || [[ ! "$GITHUB_WORKSPACE" =~ ^/ ]]; then
   printf "ERROR: Invalid GITHUB_WORKSPACE path\n" >&2
 fi
 
-# Safely append log with error handling
-if [ -f "$LOG" ] && [[ "$GITHUB_WORKSPACE" =~ ^/ ]] && [[ "$GITHUB_WORKSPACE" != *".."* ]]; then
-  cat "$LOG" >> "${GITHUB_WORKSPACE}/kernel/build.log" 2>/dev/null || printf "Warning: Failed to append to build.log\n" >&2
+# Safely append log with error handling - always ensure logs are captured
+if [ -f "$LOG" ] && [[ -n "${GITHUB_WORKSPACE:-}" ]] && [[ "$GITHUB_WORKSPACE" =~ ^/ ]] && [[ "$GITHUB_WORKSPACE" != *".."* ]]; then
+  # Copy full log to kernel directory for artifact upload
+  cp -f "$LOG" "${GITHUB_WORKSPACE}/kernel/build.log" 2>/dev/null || printf "Warning: Failed to copy log to build.log\n" >&2
+else
+  printf "Warning: Could not write to log directory\n" >&2
 fi
 
 ccache -s || true
