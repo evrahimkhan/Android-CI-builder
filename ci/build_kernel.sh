@@ -50,20 +50,30 @@ fi
 export KBUILD_BUILD_USER="android"
 export KBUILD_BUILD_HOST="android-build"
 
+# Set up log path BEFORE changing directories
+# Use absolute path from GITHUB_WORKSPACE to avoid path issues
+if [[ -n "${GITHUB_WORKSPACE:-}" ]] && [[ "$GITHUB_WORKSPACE" =~ ^/ ]]; then
+  BUILD_LOG_PATH="${GITHUB_WORKSPACE}/kernel/build.log"
+  KERNEL_DIR="${GITHUB_WORKSPACE}/kernel"
+else
+  # Fallback - should not happen in GitHub Actions
+  BUILD_LOG_PATH="$(pwd)/kernel/build.log"
+  KERNEL_DIR="$(pwd)"
+fi
+
 # Validate kernel directory exists before changing
 if [ ! -d "kernel" ]; then
   printf "ERROR: kernel directory not found\n" >&2
   exit 1
 fi
-cd kernel
 
 # Validate out directory path
 if [ ! -d "out" ]; then
   mkdir -p out || { printf "ERROR: Failed to create out directory\n" >&2; exit 1; }
 fi
 
-# Set up log path - write to file AND stdout for GitHub Actions
-LOG="${GITHUB_WORKSPACE:-$(pwd)}/kernel/build.log"
+# Log path for appending during build
+LOG="$BUILD_LOG_PATH"
 
 run_oldconfig() {
   set +e
@@ -277,29 +287,30 @@ CLANG_VER="$(clang --version | head -n1 | tr -d '\n' || true)"
 printf "KERNEL_VERSION=%s\n" "${KVER:-unknown}" >> "$GITHUB_ENV"
 printf "CLANG_VERSION=%s\n" "${CLANG_VER:-unknown}" >> "$GITHUB_ENV"
 
-# Create kernel directory and copy logs
-mkdir -p "${GITHUB_WORKSPACE}/kernel" 2>/dev/null || {
-  printf "ERROR: Failed to create kernel directory\n" >&2
-}
-
-# Validate workspace path before using
-if [[ -z "${GITHUB_WORKSPACE:-}" ]] || [[ ! "$GITHUB_WORKSPACE" =~ ^/ ]]; then
-  printf "ERROR: Invalid GITHUB_WORKSPACE path\n" >&2
-fi
-
-# Safely append log with error handling - always ensure logs are captured
-if [ -f "$LOG" ] && [[ -n "${GITHUB_WORKSPACE:-}" ]] && [[ "$GITHUB_WORKSPACE" =~ ^/ ]] && [[ "$GITHUB_WORKSPACE" != *".."* ]]; then
-  # Copy full log to kernel directory for artifact upload
-  cp -f "$LOG" "${GITHUB_WORKSPACE}/kernel/build.log" 2>/dev/null || printf "Warning: Failed to copy log to build.log\n" >&2
+# Ensure kernel directory exists in workspace
+if [[ -n "${GITHUB_WORKSPACE:-}" ]] && [[ "$GITHUB_WORKSPACE" =~ ^/ ]]; then
+  mkdir -p "${GITHUB_WORKSPACE}/kernel" || true
+  
+  # Ensure the log file exists by copying if needed
+  if [ -f "$BUILD_LOG_PATH" ]; then
+    # File exists, nothing to do
+    true
+  elif [ -f "$LOG" ]; then
+    # LOG exists at different location, copy it
+    cp -f "$LOG" "$BUILD_LOG_PATH" 2>/dev/null || true
+  else
+    # Create empty log file to avoid missing artifact errors
+    touch "$BUILD_LOG_PATH" 2>/dev/null || true
+  fi
 else
-  printf "Warning: Could not write to log directory\n" >&2
+  printf "Warning: GITHUB_WORKSPACE not set, logs may not be captured\n" >&2
 fi
 
 ccache -s || true
-  # Exit based on SUCCESS variable (used by GitHub Actions workflow)
-  # Direct script execution will see the correct exit code
-  if [[ "${SUCCESS:-0}" == "1" ]]; then
-    exit 0
-  else
-    exit 1
-  fi
+
+# Exit based on SUCCESS variable
+if [[ "${SUCCESS:-0}" == "1" ]]; then
+  exit 0
+else
+  exit 1
+fi
