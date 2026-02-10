@@ -273,6 +273,15 @@ jobs:
           log() { printf "[%s] %s\n" "$(ts)" "$*"; }
           log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
           
+          # Export env vars so subprocess can access them
+          export CUSTOM_CONFIG_ENABLED="${{ inputs.enable_custom_config }}"
+          export CFG_LOCALVERSION="${{ inputs.config_localversion }}"
+          export CFG_DEFAULT_HOSTNAME="${{ inputs.config_default_hostname }}"
+          export CFG_UNAME_OVERRIDE_STRING="${{ inputs.config_uname_override_string }}"
+          export CFG_CC_VERSION_TEXT="${{ inputs.config_cc_version_text }}"
+          export NETHUNTER_ENABLED="${{ inputs.enable_nethunter_config }}"
+          export NETHUNTER_CONFIG_LEVEL="${{ inputs.nethunter_config_level }}"
+          
           log_step "Starting: Build Kernel (${{ inputs.defconfig }})"
           bash ci/build_kernel.sh "${{ inputs.defconfig }}" 2>&1 | tee -a "$LOG_FILE"
           EXIT_CODE=${PIPESTATUS[0]:-$?}
@@ -327,6 +336,15 @@ jobs:
           ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
           log() { printf "[%s] %s\n" "$(ts)" "$*"; }
           log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          # Export env vars so subprocess can access them
+          export CUSTOM_CONFIG_ENABLED="${{ inputs.enable_custom_config }}"
+          export CFG_LOCALVERSION="${{ inputs.config_localversion }}"
+          export CFG_DEFAULT_HOSTNAME="${{ inputs.config_default_hostname }}"
+          export CFG_UNAME_OVERRIDE_STRING="${{ inputs.config_uname_override_string }}"
+          export CFG_CC_VERSION_TEXT="${{ inputs.config_cc_version_text }}"
+          export NETHUNTER_ENABLED="${{ inputs.enable_nethunter_config }}"
+          export NETHUNTER_CONFIG_LEVEL="${{ inputs.nethunter_config_level }}"
           
           log_step "Starting: Retry Build Kernel"
           bash ci/build_kernel.sh "${{ inputs.defconfig }}" 2>&1 | tee -a "$LOG_FILE"
