@@ -202,25 +202,28 @@ apply_nethunter_config() {
   printf "Applying NetHunter kernel configuration...\n"
   printf "==============================================\n"
   
-  # Debug: Show raw values with hex dump
-  printf "DEBUG: NETHUNTER_ENABLED='%s' (len=%d)\n" "${NETHUNTER_ENABLED:-UNSET}" "${#NETHUNTER_ENABLED}"
-  printf "DEBUG: NETHUNTER_ENABLED hex: "
-  printf '%s' "${NETHUNTER_ENABLED:-UNSET}" | xxd || true
-  printf "\n"
-  
-  # More robust check - trim whitespace and check various true values
+  # Temporarily disable nounset to handle potentially unset env vars
+  set +u
   local nethunter_enabled="${NETHUNTER_ENABLED:-false}"
+  local nethunter_level="${NETHUNTER_CONFIG_LEVEL:-basic}"
+  set -u
+  
+  # Debug: Show raw values
+  printf "DEBUG: NETHUNTER_ENABLED='%s'\n" "$nethunter_enabled"
+  printf "DEBUG: NETHUNTER_CONFIG_LEVEL='%s'\n" "$nethunter_level"
+  
   # Convert to lowercase for comparison
   nethunter_enabled=$(echo "$nethunter_enabled" | tr '[:upper:]' '[:lower:]')
+  
   # Check if enabled (true, 1, yes)
   if [[ "$nethunter_enabled" == "true" ]] || [[ "$nethunter_enabled" == "1" ]] || [[ "$nethunter_enabled" == "yes" ]]; then
     printf "NetHunter configuration ENABLED\n"
   else
-    printf "NetHunter configuration disabled (nethunter_enabled='%s')\n" "$nethunter_enabled"
+    printf "NetHunter configuration disabled (value='%s')\n" "$nethunter_enabled"
     return 0
   fi
 
-  printf "Configuration level: %s\n\n" "${NETHUNTER_CONFIG_LEVEL:-basic}"
+  printf "Configuration level: %s\n\n" "$nethunter_level"
   
   # Source the NetHunter config script
   if [ -f "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" ]; then
