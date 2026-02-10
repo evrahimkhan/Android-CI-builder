@@ -94,19 +94,77 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x ci/*.sh
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          mkdir -p "$LOG_DIR"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          log_step "Starting: Making CI scripts executable"
+          chmod +x ci/*.sh 2>&1 | tee -a "$LOG_FILE"
+          EXIT_CODE=${PIPESTATUS[0]:-$?}
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            log_step "Completed: Made CI scripts executable"
+          else
+            log_step "FAILED: chmod (exit code: $EXIT_CODE)"
+            printf "[%s] ERROR: chmod failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
+            exit $EXIT_CODE
+          fi
 
       - name: Run NetHunter Config Tests
         if: inputs.enable_nethunter_config == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          echo "Running NetHunter configuration test suite..."
-          bash ci/test_nethunter_config.sh
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          mkdir -p "$LOG_DIR"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          log_step "Starting: NetHunter Configuration Tests"
+          bash ci/test_nethunter_config.sh 2>&1 | tee -a "$LOG_FILE"
+          EXIT_CODE=${PIPESTATUS[0]:-$?}
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            log_step "Completed: NetHunter Configuration Tests"
+          else
+            log_step "FAILED: NetHunter tests (exit code: $EXIT_CODE)"
+            printf "[%s] ERROR: NetHunter tests failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
+            exit $EXIT_CODE
+          fi
 
       - name: Install dependencies
         shell: bash
-        run: ci/run_logged.sh ci/install_deps.sh
+        run: |
+          set -euo pipefail
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          mkdir -p "$LOG_DIR"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          log_step "Starting: Install System Dependencies"
+          bash ci/install_deps.sh 2>&1 | tee -a "$LOG_FILE"
+          EXIT_CODE=${PIPESTATUS[0]:-$?}
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            log_step "Completed: Install System Dependencies"
+          else
+            log_step "FAILED: apt-get install (exit code: $EXIT_CODE)"
+            printf "[%s] ERROR: Dependency installation failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
+            exit $EXIT_CODE
+          fi
 
       - name: Restore Proton Clang cache
         uses: actions/cache@v4
@@ -120,7 +178,28 @@ jobs:
 
       - name: Setup Proton Clang
         shell: bash
-        run: ci/run_logged.sh ci/setup_proton_clang.sh
+        run: |
+          set -euo pipefail
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          mkdir -p "$LOG_DIR"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          log_step "Starting: Setup Proton Clang"
+          bash ci/setup_proton_clang.sh 2>&1 | tee -a "$LOG_FILE"
+          EXIT_CODE=${PIPESTATUS[0]:-$?}
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            log_step "Completed: Setup Proton Clang"
+          else
+            log_step "FAILED: Proton Clang setup (exit code: $EXIT_CODE)"
+            printf "[%s] ERROR: Proton Clang setup failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
+            exit $EXIT_CODE
+          fi
 
       - name: Restore ccache
         uses: actions/cache@v4
@@ -133,90 +212,236 @@ jobs:
 
       - name: Clone Kernel Source
         shell: bash
-        run: ci/run_logged.sh ci/clone_kernel.sh "${{ inputs.kernel_source }}" "${{ inputs.kernel_branch }}"
+        run: |
+          set -euo pipefail
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          mkdir -p "$LOG_DIR"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          log_step "Starting: Clone Kernel (${{ inputs.kernel_source }}#${{ inputs.kernel_branch }})"
+          bash ci/clone_kernel.sh "${{ inputs.kernel_source }}" "${{ inputs.kernel_branch }}" 2>&1 | tee -a "$LOG_FILE"
+          EXIT_CODE=${PIPESTATUS[0]:-$?}
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            log_step "Completed: Clone Kernel"
+          else
+            log_step "FAILED: Kernel clone (exit code: $EXIT_CODE)"
+            printf "[%s] ERROR: Kernel clone failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
+            exit $EXIT_CODE
+          fi
 
       - name: Telegram Build Start
         if: ${{ env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
-        env:
-          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
-          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
-        run: ci/telegram.sh start "${{ inputs.device }}" "${{ inputs.kernel_branch }}" "${{ inputs.defconfig }}" "" "" "" "${{ inputs.enable_custom_config }}" "${{ inputs.config_localversion }}" "${{ inputs.config_default_hostname }}" "${{ inputs.config_uname_override_string }}" "${{ inputs.config_cc_version_text }}"
+        run: |
+          set -euo pipefail
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          mkdir -p "$LOG_DIR"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          log_step "Starting: Telegram Build Start Notification"
+          bash ci/telegram.sh start "${{ inputs.device }}" "${{ inputs.kernel_branch }}" "${{ inputs.defconfig }}" "" "" "" "${{ inputs.enable_custom_config }}" "${{ inputs.config_localversion }}" "${{ inputs.config_default_hostname }}" "${{ inputs.config_uname_override_string }}" "${{ inputs.config_cc_version_text }}" 2>&1 | tee -a "$LOG_FILE"
+          EXIT_CODE=${PIPESTATUS[0]:-$?}
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            log_step "Completed: Telegram Build Start Notification"
+          else
+            log_step "WARN: Telegram notification failed (exit code: $EXIT_CODE)"
+          fi
 
       - name: Build Kernel (First Attempt)
         id: build_first
         shell: bash
-        env:
-          CUSTOM_CONFIG_ENABLED: ${{ inputs.enable_custom_config }}
-          CFG_LOCALVERSION: ${{ inputs.config_localversion }}
-          CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
-          CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
-          CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
-          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
-          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: |
-          if ci/run_logged.sh ci/build_kernel.sh "${{ inputs.defconfig }}"; then
+          set -euo pipefail
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          mkdir -p "$LOG_DIR"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          log_step "Starting: Build Kernel (${{ inputs.defconfig }})"
+          bash ci/build_kernel.sh "${{ inputs.defconfig }}" 2>&1 | tee -a "$LOG_FILE"
+          EXIT_CODE=${PIPESTATUS[0]:-$?}
+          
+          if [ $EXIT_CODE -eq 0 ]; then
             echo "FIRST_BUILD_SUCCESS=true" >> "$GITHUB_ENV"
+            log_step "Completed: Build Kernel"
           else
             echo "FIRST_BUILD_SUCCESS=false" >> "$GITHUB_ENV"
-            printf "First build attempt failed, will try patching Polly flags and retrying...\n"
+            log_step "FAILED: Build Kernel (exit code: $EXIT_CODE)"
+            printf "[%s] ERROR: Initial kernel build failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
+            exit $EXIT_CODE
           fi
 
       - name: Patch unsupported Polly flags (on build failure)
         if: env.FIRST_BUILD_SUCCESS == 'false'
         shell: bash
-        run: ci/run_logged.sh ci/patch_polly.sh
+        run: |
+          set -euo pipefail
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          mkdir -p "$LOG_DIR"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          log_step "Starting: Patch Polly Flags"
+          bash ci/patch_polly.sh 2>&1 | tee -a "$LOG_FILE"
+          EXIT_CODE=${PIPESTATUS[0]:-$?}
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            log_step "Completed: Patch Polly Flags"
+          else
+            log_step "FAILED: Polly patch (exit code: $EXIT_CODE)"
+            printf "[%s] ERROR: Polly patch failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
+            exit $EXIT_CODE
+          fi
 
       - name: Build Kernel (Retry After Polly Patch)
         if: env.FIRST_BUILD_SUCCESS == 'false'
         id: build_retry
         shell: bash
-        env:
-          CUSTOM_CONFIG_ENABLED: ${{ inputs.enable_custom_config }}
-          CFG_LOCALVERSION: ${{ inputs.config_localversion }}
-          CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
-          CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
-          CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
-          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
-          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
-        run: ci/run_logged.sh ci/build_kernel.sh "${{ inputs.defconfig }}"
+        run: |
+          set -euo pipefail
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          mkdir -p "$LOG_DIR"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          log_step "Starting: Retry Build Kernel"
+          bash ci/build_kernel.sh "${{ inputs.defconfig }}" 2>&1 | tee -a "$LOG_FILE"
+          EXIT_CODE=${PIPESTATUS[0]:-$?}
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            log_step "Completed: Retry Build Kernel"
+          else
+            log_step "FAILED: Retry Build Kernel (exit code: $EXIT_CODE)"
+            printf "[%s] ERROR: Retry build failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
+            exit $EXIT_CODE
+          fi
 
       - name: Detect GKI
         shell: bash
-        run: ci/run_logged.sh ci/detect_gki.sh
+        run: |
+          set -euo pipefail
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          mkdir -p "$LOG_DIR"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          log_step "Starting: Detect GKI"
+          bash ci/detect_gki.sh 2>&1 | tee -a "$LOG_FILE"
+          EXIT_CODE=${PIPESTATUS[0]:-$?}
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            log_step "Completed: Detect GKI"
+          else
+            log_step "WARN: GKI detection had issues (exit code: $EXIT_CODE)"
+          fi
 
       - name: Verify NetHunter Configuration
         if: env.NETHUNTER_ENABLED == 'true'
         shell: bash
-        env:
-          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
-          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: |
-          # Exit code 2 = optional configs missing (warning, not failure)
-          ci/run_logged.sh ci/verify_nethunter_config.sh "${{ inputs.nethunter_config_level }}" || exit_code=$?
-          if [ "${exit_code:-0}" = "1" ]; then
-            printf "ERROR: Critical NetHunter configs missing\n" >&2
+          set -euo pipefail
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          mkdir -p "$LOG_DIR"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          log_step "Starting: Verify NetHunter Configuration"
+          bash ci/verify_nethunter_config.sh "${{ inputs.nethunter_config_level }}" 2>&1 | tee -a "$LOG_FILE"
+          EXIT_CODE=${PIPESTATUS[0]:-$?}
+          
+          if [ $EXIT_CODE -eq 1 ]; then
+            log_step "CRITICAL: Missing required NetHunter configs"
+            printf "[%s] ERROR: Critical NetHunter configs missing\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
             exit 1
+          elif [ $EXIT_CODE -eq 2 ]; then
+            log_step "WARN: Optional configs missing (acceptable)"
+          else
+            log_step "Completed: Verify NetHunter Configuration"
           fi
-          # Exit code 2 (warnings) is acceptable - continue build
 
       - name: Ensure AnyKernel core exists
         if: env.SUCCESS == '1'
         shell: bash
-        run: ci/run_logged.sh ci/ensure_anykernel_core.sh
+        run: |
+          set -euo pipefail
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          mkdir -p "$LOG_DIR"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          log_step "Starting: Ensure AnyKernel3"
+          bash ci/ensure_anykernel_core.sh 2>&1 | tee -a "$LOG_FILE"
+          EXIT_CODE=${PIPESTATUS[0]:-$?}
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            log_step "Completed: Ensure AnyKernel3"
+          else
+            log_step "FAILED: AnyKernel3 (exit code: $EXIT_CODE)"
+            printf "[%s] ERROR: AnyKernel3 setup failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
+            exit $EXIT_CODE
+          fi
 
       - name: Package AnyKernel ZIP
         if: env.SUCCESS == '1'
         shell: bash
-        env:
-          CUSTOM_CONFIG_ENABLED: ${{ inputs.enable_custom_config }}
-          CFG_LOCALVERSION: ${{ inputs.config_localversion }}
-          CFG_DEFAULT_HOSTNAME: ${{ inputs.config_default_hostname }}
-          CFG_UNAME_OVERRIDE_STRING: ${{ inputs.config_uname_override_string }}
-          CFG_CC_VERSION_TEXT: ${{ inputs.config_cc_version_text }}
-          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
-          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
-        run: ci/run_logged.sh ci/package_anykernel.sh "${{ inputs.device }}"
+        run: |
+          set -euo pipefail
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          mkdir -p "$LOG_DIR"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          log_step "Starting: Package AnyKernel ZIP (${{ inputs.device }})"
+          bash ci/package_anykernel.sh "${{ inputs.device }}" 2>&1 | tee -a "$LOG_FILE"
+          EXIT_CODE=${PIPESTATUS[0]:-$?}
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            log_step "Completed: Package AnyKernel ZIP"
+          else
+            log_step "FAILED: Package AnyKernel ZIP (exit code: $EXIT_CODE)"
+            printf "[%s] ERROR: AnyKernel packaging failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
+            exit $EXIT_CODE
+          fi
 
       - name: Upload artifacts
         if: always()
@@ -256,25 +481,95 @@ jobs:
       - name: Telegram Success
         if: ${{ env.SUCCESS == '1' && env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
-        env:
-          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
-          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
-        run: ci/telegram.sh success "${{ inputs.device }}"
+        run: |
+          set -euo pipefail
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          log_step "Starting: Telegram Success Notification"
+          bash ci/telegram.sh success "${{ inputs.device }}" 2>&1 | tee -a "$LOG_FILE"
+          
+          upload_log_telegram() {
+            local file="$1"
+            local caption="$2"
+            local max_size=$((50 * 1024 * 1024))
+            if [ -f "$file" ]; then
+              local file_size=$(stat -c%s "$file" 2>/dev/null || echo 0)
+              if [ "$file_size" -gt "$max_size" ]; then
+                tail -c $((max_size - 5242880)) "$file" > "${file}.trunc" && mv "${file}.trunc" "$file"
+                caption="$caption (truncated to 50MB)"
+              fi
+              curl -sS --max-time 120 -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
+                -F chat_id="${TG_CHAT_ID}" \
+                -F document="@${file}" \
+                -F caption="${caption}" || true
+            fi
+          }
+          
+          upload_log_telegram "$LOG_FILE" "Build successful! Full build log."
+          upload_log_telegram "$ERR_FILE" "Errors/Warnings log (if any)"
+          
+          log_step "Completed: Telegram Success Notification"
 
       - name: Telegram Failure
         if: ${{ env.SUCCESS == '0' && env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
-        env:
-          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
-          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
-        run: ci/telegram.sh failure "${{ inputs.device }}"
+        run: |
+          set -euo pipefail
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          log_step "Starting: Telegram Failure Notification"
+          bash ci/telegram.sh failure "${{ inputs.device }}" 2>&1 | tee -a "$LOG_FILE"
+          
+          upload_log_telegram() {
+            local file="$1"
+            local caption="$2"
+            local max_size=$((50 * 1024 * 1024))
+            if [ -f "$file" ]; then
+              local file_size=$(stat -c%s "$file" 2>/dev/null || echo 0)
+              if [ "$file_size" -gt "$max_size" ]; then
+                tail -c $((max_size - 5242880)) "$file" > "${file}.trunc" && mv "${file}.trunc" "$file"
+                caption="$caption (truncated to 50MB)"
+              fi
+              curl -sS --max-time 120 -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
+                -F chat_id="${TG_CHAT_ID}" \
+                -F document="@${file}" \
+                -F caption="${caption}" || true
+            fi
+          }
+          
+          upload_log_telegram "$LOG_FILE" "Build failed! Full build log."
+          upload_log_telegram "$ERR_FILE" "Error log"
+          
+          log_step "Completed: Telegram Failure Notification"
 
       - name: Mark workflow status
         shell: bash
         run: |
+          set -euo pipefail
+          LOG_DIR="${{ github.workspace }}/kernel"
+          LOG_FILE="$LOG_DIR/build.log"
+          ERR_FILE="$LOG_DIR/error.log"
+          
+          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
+          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
+          
           if [ "${{ env.SUCCESS }}" == "1" ]; then
             echo "✅ Kernel build completed successfully"
+            log "BUILD SUCCESS"
           else
-            echo "❌ Kernel build failed"
+            echo "❌ Kernel build failed - see error.log for details"
+            log "BUILD FAILED"
             exit 1
           fi
