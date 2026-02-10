@@ -225,11 +225,14 @@ jobs:
           
           log_step "Starting: Clone Kernel (${{ inputs.kernel_source }}#${{ inputs.kernel_branch }})"
           
-          # Check if kernel already exists
+          # Remove kernel dir AFTER creating log dir
           if [ -d "${{ github.workspace }}/kernel" ]; then
             log "Kernel directory already exists, removing..."
             rm -rf "${{ github.workspace }}/kernel"
           fi
+          
+          # Recreate log directory after rm
+          mkdir -p "$LOG_DIR"
           
           bash ci/clone_kernel.sh "${{ inputs.kernel_source }}" "${{ inputs.kernel_branch }}" 2>&1 | tee -a "$LOG_FILE"
           EXIT_CODE=${PIPESTATUS[0]:-$?}
