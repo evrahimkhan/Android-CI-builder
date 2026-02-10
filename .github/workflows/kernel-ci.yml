@@ -224,13 +224,28 @@ jobs:
           log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
           
           log_step "Starting: Clone Kernel (${{ inputs.kernel_source }}#${{ inputs.kernel_branch }})"
+          
+          # Check if kernel already exists
+          if [ -d "${{ github.workspace }}/kernel" ]; then
+            log "Kernel directory already exists, removing..."
+            rm -rf "${{ github.workspace }}/kernel"
+          fi
+          
           bash ci/clone_kernel.sh "${{ inputs.kernel_source }}" "${{ inputs.kernel_branch }}" 2>&1 | tee -a "$LOG_FILE"
           EXIT_CODE=${PIPESTATUS[0]:-$?}
           
-          if [ $EXIT_CODE -eq 0 ]; then
+          # Verify clone succeeded
+          if [ $EXIT_CODE -eq 0 ] && [ -f "${{ github.workspace }}/kernel/Makefile" ]; then
             log_step "Completed: Clone Kernel"
+            log "Kernel Makefile found at: ${{ github.workspace }}/kernel/Makefile"
+          elif [ $EXIT_CODE -eq 0 ]; then
+            log_step "Clone returned success but Makefile not found"
+            EXIT_CODE=1
           else
             log_step "FAILED: Kernel clone (exit code: $EXIT_CODE)"
+          fi
+          
+          if [ $EXIT_CODE -ne 0 ]; then
             printf "[%s] ERROR: Kernel clone failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
             exit $EXIT_CODE
           fi

@@ -50,30 +50,32 @@ fi
 export KBUILD_BUILD_USER="android"
 export KBUILD_BUILD_HOST="android-build"
 
-# Set up log path BEFORE changing directories
-# Use absolute path from GITHUB_WORKSPACE to avoid path issues
+# Set up paths
 if [[ -n "${GITHUB_WORKSPACE:-}" ]] && [[ "$GITHUB_WORKSPACE" =~ ^/ ]]; then
   BUILD_LOG_PATH="${GITHUB_WORKSPACE}/kernel/build.log"
-  KERNEL_DIR="${GITHUB_WORKSPACE}/kernel"
+  cd "${GITHUB_WORKSPACE}" || exit 1
 else
-  # Fallback - should not happen in GitHub Actions
   BUILD_LOG_PATH="$(pwd)/kernel/build.log"
-  KERNEL_DIR="$(pwd)"
 fi
 
-# Validate kernel directory exists before changing
+# Create log directory
+mkdir -p "$(dirname "$BUILD_LOG_PATH")" 2>/dev/null || true
+
+# Change to kernel directory
 if [ ! -d "kernel" ]; then
   printf "ERROR: kernel directory not found\n" >&2
   exit 1
 fi
+cd kernel || exit 1
+KERNEL_DIR="$(pwd)"
 
-# Validate out directory path
+# Validate out directory
 if [ ! -d "out" ]; then
   mkdir -p out || { printf "ERROR: Failed to create out directory\n" >&2; exit 1; }
 fi
 
-# Log path for appending during build
-LOG="$BUILD_LOG_PATH"
+# Log path
+LOG="${BUILD_LOG_PATH}"
 
 run_oldconfig() {
   set +e
