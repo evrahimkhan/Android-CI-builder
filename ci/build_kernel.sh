@@ -276,8 +276,10 @@ fi
 
 START="$(date +%s)"
 if make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 2>&1 | tee -a "$LOG"; then
+  SUCCESS=1
   printf "SUCCESS=1\n" >> "$GITHUB_ENV"
 else
+  SUCCESS=0
   printf "SUCCESS=0\n" >> "$GITHUB_ENV"
   cp -f "$LOG" "${GITHUB_WORKSPACE}/kernel/error.log" 2>/dev/null || true
 fi
