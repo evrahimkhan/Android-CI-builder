@@ -466,6 +466,9 @@ jobs:
       - name: Package AnyKernel ZIP
         if: env.SUCCESS == '1'
         shell: bash
+        env:
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: |
           set -euo pipefail
           LOG_DIR="${{ github.workspace }}/kernel"
