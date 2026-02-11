@@ -304,15 +304,17 @@ jobs:
           bash ci/build_kernel.sh "${{ inputs.defconfig }}" 2>&1 | tee -a "$LOG_FILE"
           EXIT_CODE=${PIPESTATUS[0]:-$?}
           
-          if [ $EXIT_CODE -eq 0 ]; then
-            echo "FIRST_BUILD_SUCCESS=true" >> "$GITHUB_ENV"
-            log_step "Completed: Build Kernel"
-          else
-            echo "FIRST_BUILD_SUCCESS=false" >> "$GITHUB_ENV"
-            log_step "FAILED: Build Kernel (exit code: $EXIT_CODE)"
-            printf "[%s] ERROR: Initial kernel build failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
-            exit $EXIT_CODE
-          fi
+           if [ $EXIT_CODE -eq 0 ]; then
+             echo "FIRST_BUILD_SUCCESS=true" >> "$GITHUB_ENV"
+             echo "SUCCESS=1" >> "$GITHUB_ENV"
+             log_step "Completed: Build Kernel"
+           else
+             echo "FIRST_BUILD_SUCCESS=false" >> "$GITHUB_ENV"
+             echo "SUCCESS=0" >> "$GITHUB_ENV"
+             log_step "FAILED: Build Kernel (exit code: $EXIT_CODE)"
+             printf "[%s] ERROR: Initial kernel build failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
+             exit $EXIT_CODE
+           fi
 
       - name: Patch unsupported Polly flags (on build failure)
         if: env.FIRST_BUILD_SUCCESS == 'false'
@@ -368,13 +370,15 @@ jobs:
           bash ci/build_kernel.sh "${{ inputs.defconfig }}" 2>&1 | tee -a "$LOG_FILE"
           EXIT_CODE=${PIPESTATUS[0]:-$?}
           
-          if [ $EXIT_CODE -eq 0 ]; then
-            log_step "Completed: Retry Build Kernel"
-          else
-            log_step "FAILED: Retry Build Kernel (exit code: $EXIT_CODE)"
-            printf "[%s] ERROR: Retry build failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
-            exit $EXIT_CODE
-          fi
+           if [ $EXIT_CODE -eq 0 ]; then
+             echo "SUCCESS=1" >> "$GITHUB_ENV"
+             log_step "Completed: Retry Build Kernel"
+           else
+             echo "SUCCESS=0" >> "$GITHUB_ENV"
+             log_step "FAILED: Retry Build Kernel (exit code: $EXIT_CODE)"
+             printf "[%s] ERROR: Retry build failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
+             exit $EXIT_CODE
+           fi
 
       - name: Detect GKI
         shell: bash
