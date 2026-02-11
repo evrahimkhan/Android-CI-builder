@@ -256,6 +256,9 @@ jobs:
       - name: Telegram Build Start
         if: ${{ env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
+        env:
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: |
           set -euo pipefail
           LOG_DIR="${{ github.workspace }}/kernel"
@@ -404,8 +407,11 @@ jobs:
           fi
 
       - name: Verify NetHunter Configuration
-        if: env.NETHUNTER_ENABLED == 'true'
+        if: ${{ inputs.enable_nethunter_config == 'true' }}
         shell: bash
+        env:
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: |
           set -euo pipefail
           LOG_DIR="${{ github.workspace }}/kernel"
@@ -521,6 +527,9 @@ jobs:
       - name: Telegram Success
         if: ${{ env.SUCCESS == '1' && env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
+        env:
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: |
           set -euo pipefail
           LOG_DIR="${{ github.workspace }}/kernel"
@@ -559,6 +568,9 @@ jobs:
       - name: Telegram Failure
         if: ${{ env.SUCCESS == '0' && env.TG_TOKEN != '' && env.TG_CHAT_ID != '' }}
         shell: bash
+        env:
+          NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
+          NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
         run: |
           set -euo pipefail
           LOG_DIR="${{ github.workspace }}/kernel"
