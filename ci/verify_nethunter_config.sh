@@ -3,7 +3,7 @@
 # Verifies that NetHunter configurations were successfully applied to kernel config
 # Usage: ci/verify_nethunter_config.sh <basic|full>
 
-set -euo pipefail
+set -uo pipefail
 
 CONFIG_LEVEL="${1:-basic}"
 
@@ -32,11 +32,7 @@ check_config() {
 
     ((CONFIGS_TOTAL++)) || true
 
-    # Escape all special regex characters for grep -E usage
-    local escaped_config
-    escaped_config=$(printf '%s\n' "$config_name" | sed 's/[][\.*^$()+?{|}/\\&/g; s/\//\\\//g; s/-/\\-/g; s/=/\\=/g')
-
-    # Use grep -F for fixed-string matching (safer than -E)
+    # Use grep -F for fixed-string matching (safer than escaping)
     if grep -qF "CONFIG_${config_name}=" "$CONFIG_FILE" 2>/dev/null; then
         ((CONFIGS_FOUND++)) || true
         return 0
