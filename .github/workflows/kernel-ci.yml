@@ -7,7 +7,7 @@ on:
         description: Kernel source git URL
         required: true
         type: string
-        pattern: ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]+)+(\.git)?$
+        pattern: ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]*\.git$
       kernel_branch:
         description: Kernel branch
         required: true
@@ -225,13 +225,16 @@ jobs:
           
           log_step "Starting: Clone Kernel (${{ inputs.kernel_source }}#${{ inputs.kernel_branch }})"
           
-          # Remove kernel dir AFTER creating log dir
+          # Create log directory FIRST, before any cleanup
+          mkdir -p "$LOG_DIR"
+          
+          # Now remove kernel dir (log dir is already created, so we won't have race)
           if [ -d "${{ github.workspace }}/kernel" ]; then
             log "Kernel directory already exists, removing..."
             rm -rf "${{ github.workspace }}/kernel"
           fi
           
-          # Recreate log directory after rm
+          # Recreate log directory after rm (in case it was removed)
           mkdir -p "$LOG_DIR"
           
           bash ci/clone_kernel.sh "${{ inputs.kernel_source }}" "${{ inputs.kernel_branch }}" 2>&1 | tee -a "$LOG_FILE"

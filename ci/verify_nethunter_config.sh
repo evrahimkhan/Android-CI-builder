@@ -3,28 +3,36 @@
 # Verifies that NetHunter configurations were successfully applied to kernel config
 # Usage: ci/verify_nethunter_config.sh <basic|full>
 
-set -uo pipefail
+set -euo pipefail
 
 CONFIG_LEVEL="${1:-basic}"
 
 # Validate input
 if [[ ! "$CONFIG_LEVEL" =~ ^(basic|full)$ ]]; then
-    log_error "Invalid config level: $CONFIG_LEVEL (must be 'basic' or 'full')"
+    printf "[verify-nethunter] ERROR: Invalid config level: %s (must be 'basic' or 'full')\n" "$CONFIG_LEVEL" >&2
     exit 2
 fi
 
-KERNEL_DIR="${KERNEL_DIR:-kernel}"
+# Determine kernel directory with proper validation
+KERNEL_DIR="${KERNEL_DIR:-${GITHUB_WORKSPACE:-.}/kernel}"
 CONFIG_FILE="${KERNEL_DIR}/out/.config"
+
+# Validate KERNEL_DIR is safe (no path traversal)
+if [[ "$KERNEL_DIR" =~ \.\. ]]; then
+    printf "[verify-nethunter] ERROR: Invalid KERNEL_DIR path: %s\n" "$KERNEL_DIR" >&2
+    exit 1
+fi
+
+# Wrapper functions with prefix
+log_info() { echo "[verify-nethunter] $*"; }
+log_warn() { echo "[verify-nethunter] WARNING: $*" >&2; }
+log_error() { echo "[verify-nethunter] ERROR: $*" >&2; }
 
 CONFIGS_CHECKED=0
 CONFIGS_FOUND=0
 CONFIGS_TOTAL=0
 MISSING_CRITICAL=()
 WARNINGS=()
-
-log_info() { echo "[verify-nethunter] $*"; }
-log_warn() { echo "[verify-nethunter] WARNING: $*" >&2; }
-log_error() { echo "[verify-nethunter] ERROR: $*" >&2; }
 
 check_config() {
     local config_name="$1"

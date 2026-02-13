@@ -22,8 +22,17 @@ if ! validate_defconfig "$DEFCONFIG"; then
     exit 1
 fi
 
+# Determine kernel directory with validation
+KERNEL_DIR="${KERNEL_DIR:-${GITHUB_WORKSPACE:-.}/kernel}"
+
+# Validate kernel directory exists
+if [ ! -d "$KERNEL_DIR" ]; then
+    printf "ERROR: Kernel directory not found: %s\n" "$KERNEL_DIR" >&2
+    exit 1
+fi
+
 # Change to kernel directory
-cd kernel
+cd "$KERNEL_DIR"
 
 # Create output directory
 mkdir -p out

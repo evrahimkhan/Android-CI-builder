@@ -22,5 +22,6 @@ fi
 
 if [ ! -x clang/bin/clang ]; then
   # Clone without --single-branch to allow tag fetching from all branches
-  git clone --depth=1 --branch "$PROTON_CLANG_BRANCH" "$PROTON_CLANG_URL" clang || { printf "ERROR: Proton Clang clone failed\n"; exit 1; }
+  # Use timeout to prevent hanging, depth=1 for faster clone
+  timeout 300 git clone --depth=1 --branch "$PROTON_CLANG_BRANCH" "$PROTON_CLANG_URL" clang || { printf "ERROR: Proton Clang clone failed (timeout or network error)\n" >&2; exit 1; }
 fi

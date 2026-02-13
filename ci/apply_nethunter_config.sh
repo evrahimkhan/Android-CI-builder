@@ -21,6 +21,9 @@ if [[ -z "${KERNEL_DIR:-}" ]]; then
   fi
 fi
 
+# Configurable default hostname
+NETHUNTER_HOSTNAME="${NETHUNTER_HOSTNAME:-kali}"
+
 # Detect kernel version for conditional config application
 detect_kernel_version() {
   local kver
@@ -102,6 +105,17 @@ safe_set_kcfg_bool() {
   local key="$1"
   local yn="$2"
   
+  # Validate inputs before use
+  if [[ ! "$key" =~ ^[A-Za-z0-9_]+$ ]]; then
+    printf "Notice: CONFIG_%s has invalid format, skipping\n" "$key"
+    return 1
+  fi
+  
+  if [[ ! "$yn" =~ ^[yn]$ ]]; then
+    printf "Notice: Invalid value '%s' for CONFIG_%s, skipping\n" "$yn" "$key"
+    return 1
+  fi
+  
   if check_config_exists "$key"; then
     set_kcfg_bool "$key" "$yn"
   else
@@ -113,6 +127,12 @@ safe_set_kcfg_bool() {
 safe_set_kcfg_str() {
   local key="$1"
   local val="$2"
+  
+  # Validate inputs before use
+  if [[ ! "$key" =~ ^[A-Za-z0-9_]+$ ]]; then
+    printf "Notice: CONFIG_%s has invalid format, skipping\n" "$key"
+    return 1
+  fi
   
   if check_config_exists "$key"; then
     set_kcfg_str "$key" "$val"
@@ -219,7 +239,7 @@ apply_nethunter_universal_core() {
   safe_set_kcfg_bool MODULE_UNLOAD y
   safe_set_kcfg_bool MODULE_FORCE_UNLOAD y
   safe_set_kcfg_bool MODVERSIONS y
-  safe_set_kcfg_str DEFAULT_HOSTNAME "kali"
+  safe_set_kcfg_str DEFAULT_HOSTNAME "${NETHUNTER_HOSTNAME}"
   safe_set_kcfg_str LOCALVERSION ""
   
   # Core networking - Universal

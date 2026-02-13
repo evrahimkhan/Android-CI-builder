@@ -6,7 +6,7 @@ set -euo pipefail
 
 # Test configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TEST_DIR="${GITHUB_WORKSPACE:-/tmp}/.test_nethunter_$$"
+TEST_DIR="${GITHUB_WORKSPACE:-/tmp}/.test_nethunter_$(date +%s)_$$"
 TEST_KERNEL_DIR="${TEST_DIR}/kernel"
 TEST_OUT_DIR="${TEST_KERNEL_DIR}/out"
 
