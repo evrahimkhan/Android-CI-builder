@@ -101,9 +101,15 @@ if [ ! -f anykernel/anykernel.sh ]; then
 fi
 
 sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/anykernel.sh
-sed -i "s|^[[:space:]]*device.name1=.*|device.name1=|" anykernel/anykernel.sh
 
-# Remove all device.name lines to allow flashing on any device
+# Disable device check to allow flashing on any device
+sed -i "s|^[[:space:]]*do.devicecheck=.*|do.devicecheck=0|" anykernel/anykernel.sh
+# If no do.devicecheck line, add it
+if ! grep -q "^[[:space:]]*do.devicecheck=" anykernel/anykernel.sh; then
+  sed -i "/^properties()/a\\do.devicecheck=0" anykernel/anykernel.sh
+fi
+
+# Remove all device name lines to allow flashing on any device
 sed -i "/^[[:space:]]*device.name/d" anykernel/anykernel.sh
 
 # Set block device ID - commonly boot or boot_a
