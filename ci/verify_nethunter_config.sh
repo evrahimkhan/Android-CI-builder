@@ -161,40 +161,10 @@ if [ "${CONFIG_LEVEL}" == "full" ]; then
         log_warn "✗ CONFIG_CFG80211_CRDA_SUPPORT missing (optional)"
     fi
     
-    if check_config "CFG80211_INTERNAL_REGDB" "false"; then
-        log_info "✓ CONFIG_CFG80211_INTERNAL_REGDB present"
-    else
-        log_warn "✗ CONFIG_CFG80211_INTERNAL_REGDB missing (optional)"
-    fi
-    
     if check_config "WLAN" "false"; then
         log_info "✓ CONFIG_WLAN present"
     else
         log_warn "✗ CONFIG_WLAN missing (optional)"
-    fi
-    
-    if check_config "RTL8192EU" "false"; then
-        log_info "✓ CONFIG_RTL8192EU present"
-    else
-        log_warn "✗ CONFIG_RTL8192EU missing (optional)"
-    fi
-    
-    if check_config "RTL8812AU" "false"; then
-        log_info "✓ CONFIG_RTL8812AU present"
-    else
-        log_warn "✗ CONFIG_RTL8812AU missing (optional)"
-    fi
-    
-    if check_config "RTL88XXAU" "false"; then
-        log_info "✓ CONFIG_RTL88XXAU present"
-    else
-        log_warn "✗ CONFIG_RTL88XXAU missing (optional)"
-    fi
-    
-    if check_config "MT76" "false"; then
-        log_info "✓ CONFIG_MT76 present"
-    else
-        log_warn "✗ CONFIG_MT76 missing (optional)"
     fi
     
     if check_config "RTLWIFI" "false"; then
@@ -233,22 +203,10 @@ if [ "${CONFIG_LEVEL}" == "full" ]; then
         log_warn "✗ CONFIG_USB_SERIAL missing (optional)"
     fi
     
-    if check_config "USB_SERIAL_WWAN" "false"; then
-        log_info "✓ CONFIG_USB_SERIAL_WWAN present"
-    else
-        log_warn "✗ CONFIG_USB_SERIAL_WWAN missing (optional)"
-    fi
-    
     if check_config "USB_ACM" "false"; then
         log_info "✓ CONFIG_USB_ACM present"
     else
         log_warn "✗ CONFIG_USB_ACM missing (optional)"
-    fi
-    
-    if check_config "USB_IP" "false"; then
-        log_info "✓ CONFIG_USB_IP present"
-    else
-        log_warn "✗ CONFIG_USB_IP missing (optional)"
     fi
 fi
 
