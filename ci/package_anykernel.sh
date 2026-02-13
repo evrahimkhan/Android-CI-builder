@@ -101,7 +101,15 @@ if [ ! -f anykernel/anykernel.sh ]; then
 fi
 
 sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/anykernel.sh
-sed -i "s|^[[:space:]]*device.name1=.*|device.name1=${DEVICE}|" anykernel/anykernel.sh
+sed -i "s|^[[:space:]]*device.name1=.*|device.name1=|" anykernel/anykernel.sh
+
+# Remove all device.name lines to allow flashing on any device
+sed -i "/^[[:space:]]*device.name/d" anykernel/anykernel.sh
+
+# Set block device ID - commonly boot or boot_a
+# Use BOOT_PARTITION env var to override, default to boot
+BOOT_PARTITION="${BOOT_PARTITION:-boot}"
+sed -i "s|^[[:space:]]*id=.*|id=${BOOT_PARTITION}|" anykernel/anykernel.sh
 
 ZIP_NAME="Kernel-${DEVICE}-${ZIP_VARIANT}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.zip"
 

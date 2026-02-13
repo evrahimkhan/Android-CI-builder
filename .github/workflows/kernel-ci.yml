@@ -67,6 +67,12 @@ on:
         default: "basic"
         type: choice
         options: ["basic", "full"]
+      boot_partition:
+        description: Boot partition ID (e.g., boot, boot_a, recovery)
+        required: false
+        default: "boot"
+        type: string
+        pattern: ^[a-zA-Z0-9_]+$
 
 
 jobs:
@@ -472,6 +478,7 @@ jobs:
         env:
           NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
           NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
+          BOOT_PARTITION: ${{ inputs.boot_partition }}
         run: |
           set -euo pipefail
           LOG_DIR="${{ github.workspace }}/kernel"
