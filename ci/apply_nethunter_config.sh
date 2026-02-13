@@ -245,6 +245,8 @@ apply_nethunter_universal_core() {
   # Core networking - Universal
   safe_set_kcfg_bool CFG80211 y
   safe_set_kcfg_bool CFG80211_WEXT y
+  safe_set_kcfg_bool CFG80211_CRDA_SUPPORT y
+  safe_set_kcfg_bool CFG80211_INTERNAL_REGDB y
   safe_set_kcfg_bool MAC80211 y
   safe_set_kcfg_bool MAC80211_MESH y
   
@@ -260,6 +262,7 @@ apply_nethunter_universal_core() {
   safe_set_kcfg_bool USB_ACM y
   safe_set_kcfg_bool USB_STORAGE y
   safe_set_kcfg_bool USB_GADGET y
+  safe_set_kcfg_bool USB_GADGETFS y
   safe_set_kcfg_bool USB_CONFIGFS y
   safe_set_kcfg_bool USB_CONFIGFS_SERIAL y
   safe_set_kcfg_bool USB_CONFIGFS_ACM y
@@ -267,6 +270,7 @@ apply_nethunter_universal_core() {
   safe_set_kcfg_bool USB_CONFIGFS_RNDIS y
   safe_set_kcfg_bool USB_CONFIGFS_MASS_STORAGE y
   safe_set_kcfg_bool USB_CONFIGFS_F_HID y
+  safe_set_kcfg_bool USB_IP y
   
   # HID Support - Universal
   safe_set_kcfg_bool HIDRAW y
@@ -335,7 +339,14 @@ apply_nethunter_wireless() {
   safe_set_kcfg_bool RTL8187 y
   safe_set_kcfg_bool RTL_CARDS y
   safe_set_kcfg_bool RTL8192CU y
+  safe_set_kcfg_bool RTL8192EU y
+  safe_set_kcfg_bool RTL8812AU y
+  safe_set_kcfg_bool RTL88XXAU y
   safe_set_kcfg_bool RTL8XXXU_UNTESTED y
+  
+  # MediaTek MT76
+  safe_set_kcfg_bool MT76 y
+  safe_set_kcfg_bool MT76x2U y
   
   # ZyDAS
   safe_set_kcfg_bool WLAN_VENDOR_ZYDAS y
@@ -388,6 +399,7 @@ apply_nethunter_can() {
   safe_set_kcfg_bool USB_SERIAL_CH341 y
   safe_set_kcfg_bool USB_SERIAL_FTDI_SIO y
   safe_set_kcfg_bool USB_SERIAL_PL2303 y
+  safe_set_kcfg_bool USB_SERIAL_WWAN y
 }
 
 # GKI-aware configuration (only for non-GKI kernels)
