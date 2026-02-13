@@ -32,7 +32,8 @@ if [ ! -f anykernel/tools/ak3-core.sh ]; then
   git clone --depth=1 "$ANYKERNEL_URL" anykernel_upstream || { printf "ERROR: AnyKernel3 clone failed\n"; exit 1; }
 
   # Copy upstream files to anykernel/, preserving local anykernel.sh if it exists
-  if ! rsync -a --exclude 'anykernel.sh' anykernel_upstream/ anykernel/; then
+  # Use rsync with explicit excludes for security
+  if ! rsync -a --exclude 'anykernel.sh' --exclude '.git' --exclude '*.sh' --exclude '*.md' --exclude 'LICENSE' anykernel_upstream/ anykernel/; then
     printf "ERROR: rsync failed\n" >&2
     rm -rf anykernel_upstream 2>/dev/null || printf "Warning: Failed to clean up temp directory\n" >&2
     exit 1

@@ -9,6 +9,21 @@ fi
 
 DEVICE="${1:?device required}"
 
+# Validate device name to prevent path traversal
+if ! validate_device_name "$DEVICE"; then
+  exit 1
+fi
+
+# Validate GITHUB_WORKSPACE to prevent path traversal
+if ! validate_workspace; then
+  exit 1
+fi
+
+# Validate GITHUB_ENV to prevent path traversal
+if ! validate_github_env; then
+  exit 1
+fi
+
 # Simple error logging function (same as in telegram.sh)
 log_err() { printf "[package_anykernel] %s\n" "$*" >&2; }
 
@@ -27,18 +42,10 @@ fi
 # Export for Telegram notifications
 printf "ZIP_VARIANT=%s\n" "$ZIP_VARIANT" >> "$GITHUB_ENV"
 
-# Validate device name to prevent path traversal
-if ! validate_device_name "$DEVICE"; then
-  exit 1
-fi
 
-# Validate GITHUB_ENV to prevent path traversal
-if ! validate_github_env; then
-  exit 1
-fi
-
-
-KERNELDIR="kernel/out/arch/arm64/boot"
+# Determine kernel directory with proper validation
+KERNEL_DIR="${KERNEL_DIR:-${GITHUB_WORKSPACE}/kernel}"
+KERNELDIR="${KERNEL_DIR}/out/arch/arm64/boot"
 test -d "$KERNELDIR"
 
 rm -f anykernel/Image* anykernel/zImage 2>/dev/null || true
@@ -97,6 +104,13 @@ sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/an
 sed -i "s|^[[:space:]]*device.name1=.*|device.name1=${DEVICE}|" anykernel/anykernel.sh
 
 ZIP_NAME="Kernel-${DEVICE}-${ZIP_VARIANT}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.zip"
+
+# Validate ZIP_NAME doesn't contain path traversal
+if [[ "$ZIP_NAME" =~ \.\. ]] || [[ "$ZIP_NAME" =~ ^/ ]]; then
+  printf "ERROR: Invalid ZIP name: %s\n" "$ZIP_NAME" >&2
+  exit 1
+fi
+
 (cd anykernel && zip -r9 "../${ZIP_NAME}" . -x "*.git*" ) || { printf "ERROR: ZIP creation failed\n"; exit 1; }
 
 printf "Built for %s | Linux %s | CI %s/%s\n" \

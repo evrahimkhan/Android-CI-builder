@@ -32,6 +32,12 @@ cleanup_temp() {
   fi
 }
 
+# Ensure LOG_DIR exists before any operations that might fail
+# This prevents losing logs if script fails
+if [[ -n "${GITHUB_WORKSPACE:-}" ]]; then
+  mkdir -p "${GITHUB_WORKSPACE}/kernel" 2>/dev/null || true
+fi
+
 trap cleanup_temp EXIT
 
 # Clone to temporary directory first

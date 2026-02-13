@@ -78,13 +78,17 @@ fi
 LOG="${BUILD_LOG_PATH}"
 
 run_oldconfig() {
-  set +e
+  # Save current pipefail state
+  local old_pipefail=$(set +o | grep pipefail)
   set +o pipefail
-  # Use yes "" to auto-answer prompts with defaults, but also redirect stdin to avoid hanging
-  yes "" | make O=out oldconfig 2>&1 | tee -a "$LOG" || true
+  
+  # Capture exit code properly
+  yes "" | make O=out oldconfig 2>&1 | tee -a "$LOG"
   local rc=${PIPESTATUS[0]:-$?}
-  set -o pipefail
-  set -e
+  
+  # Restore pipefail state
+  $old_pipefail
+  
   return "$rc"
 }
 
@@ -220,10 +224,6 @@ apply_nethunter_config() {
   local nethunter_level="${NETHUNTER_CONFIG_LEVEL:-basic}"
   set -u 2>/dev/null
   
-  # Debug: Show raw values
-  printf "DEBUG: NETHUNTER_ENABLED='%s'\n" "$nethunter_enabled"
-  printf "DEBUG: NETHUNTER_CONFIG_LEVEL='%s'\n" "$nethunter_level"
-  
   # Convert to lowercase for comparison
   nethunter_enabled=$(echo "$nethunter_enabled" | tr '[:upper:]' '[:lower:]')
   
@@ -275,7 +275,13 @@ fi
 
 
 START="$(date +%s)"
-if make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 2>&1 | tee -a "$LOG"; then
+# Build with proper exit code capture (pipeto returns tee exit code, not make)
+set +o pipefail
+make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 2>&1 | tee -a "$LOG"
+BUILD_RC=${PIPESTATUS[0]}
+set -o pipefail
+
+if [ "$BUILD_RC" -eq 0 ]; then
   SUCCESS=1
   printf "SUCCESS=1\n" >> "$GITHUB_ENV"
 else

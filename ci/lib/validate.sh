@@ -81,8 +81,11 @@ validate_github_env() {
 validate_git_url() {
   local url="$1"
 
-  if [[ ! "$url" =~ ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]+)+(\.git)?$ ]]; then
-    printf "ERROR: Invalid git URL format: %s (must be HTTPS)\n" "$url" >&2
+  # Stricter validation: only allow HTTPS URLs for git repos
+  # Must be: https:// followed by valid domain, optional port, path, and optional .git suffix
+  # Disallows: @ (credentials injection), ? (query params), # (fragments)
+  if [[ ! "$url" =~ ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]+)*\.git$ ]]; then
+    printf "ERROR: Invalid git URL format: %s (must be HTTPS .git URL)\n" "$url" >&2
     return 1
   fi
 
@@ -120,13 +123,6 @@ validate_branch_name() {
   fi
 
   return 0
-}
-
-sanitize_input() {
-  local input="$1"
-  local allowed="${2:-a-zA-Z0-9/_.-}"
-
-  printf '%s\n' "$input" | sed "s/[^${allowed}]/_/g"
 }
 
 # ============================================
@@ -171,4 +167,4 @@ human_size() {
 export -f log_err log_info log_error log_warn
 export -f validate_workspace validate_github_env
 export -f validate_git_url validate_defconfig validate_device_name validate_branch_name
-export -f sanitize_input pick_latest human_size
+export -f pick_latest human_size

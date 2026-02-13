@@ -20,13 +20,14 @@ if grep -RIn --include='Makefile*' --include='*.mk' --include='*.make' -F '-poll
     # Find and patch files with validation using positive allowlist for paths
     while IFS= read -r -d '' file; do
       # Validate path is within kernel directory and has safe characters
-      if [[ "$file" == kernel/* ]] && [[ "$file" =~ ^[a-zA-Z0-9_./-]+$ ]]; then
+      # Must start with kernel/ and contain only safe characters (no .. or /.)
+      if [[ "$file" == kernel/* ]] && [[ ! "$file" =~ \.\. ]] && [[ "$file" =~ ^kernel/[a-zA-Z0-9_/-]+[/a-zA-Z0-9_.-]*$ ]]; then
         sed -i -E \
           -e 's/[[:space:]]-mllvm[[:space:]]+-polly-[^[:space:]]+//g' \
           -e 's/[[:space:]]-polly-[^[:space:]]+//g' \
           "$file" 2>/dev/null || true
       fi
-  done < <(find kernel -maxdepth 5 -type f \( -name 'Makefile' -o -name 'Makefile.*' -o -name '*.mk' -o -name '*.make' \) -print0 2>/dev/null)
+    done < <(find kernel -maxdepth 5 -type f \( -name 'Makefile' -o -name 'Makefile.*' -o -name '*.mk' -o -name '*.make' \) -print0 2>/dev/null)
   fi
   # Cleanup handled by trap EXIT
 fi
