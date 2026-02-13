@@ -81,11 +81,17 @@ validate_github_env() {
 validate_git_url() {
   local url="$1"
 
-  # Stricter validation: only allow HTTPS URLs for git repos
-  # Must be: https:// followed by valid domain, optional port, path, and optional .git suffix
-  # Disallows: @ (credentials injection), ? (query params), # (fragments)
-  if [[ ! "$url" =~ ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]+)*\.git$ ]]; then
+  # Validation: allow HTTPS URLs for git repos
+  # Must be: https:// followed by valid domain, optional port, path, optional .git suffix
+  # Disallows: @ (credentials injection), ? (query params), # (fragments), ..
+  if [[ ! "$url" =~ ^https://[a-zA-Z0-9][a-zA-Z0-9._-]*(:[0-9]+)?(/[a-zA-Z0-9._-]+)*(\.git)?$ ]]; then
     printf "ERROR: Invalid git URL format: %s (must be HTTPS .git URL)\n" "$url" >&2
+    return 1
+  fi
+
+  # Additional check: reject URLs with .. anywhere (path traversal)
+  if [[ "$url" =~ \.\. ]]; then
+    printf "ERROR: Invalid git URL (path traversal): %s\n" "$url" >&2
     return 1
   fi
 
