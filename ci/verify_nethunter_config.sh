@@ -276,7 +276,7 @@ if [ ${#WARNINGS[@]} -gt 0 ]; then
     done
     echo ""
     log_warn "Verification PASSED with ${#WARNINGS[@]} optional configs missing"
-    exit 2
+    exit 0
 fi
 
 if [ "${CONFIGS_FOUND}" -eq "${CONFIGS_TOTAL}" ]; then
