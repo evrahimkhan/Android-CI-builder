@@ -191,12 +191,6 @@ if [ "${CONFIG_LEVEL}" == "full" ]; then
         log_warn "✗ CONFIG_NFS_FS missing (optional)"
     fi
     
-    if check_config "NFS_V4" "false"; then
-        log_info "✓ CONFIG_NFS_V4 present"
-    else
-        log_warn "✗ CONFIG_NFS_V4 missing (optional)"
-    fi
-    
     if check_config "USB_SERIAL" "false"; then
         log_info "✓ CONFIG_USB_SERIAL present"
     else
