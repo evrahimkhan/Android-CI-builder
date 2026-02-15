@@ -1,11 +1,8 @@
-kernel/
-
 .qwen/
 gha-creds-*.json
 
 # AnyKernel generated files
-anykernel/
-*.zip
+kernal*.zip
 
 # Build artifacts
 out/
