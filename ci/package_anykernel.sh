@@ -1,51 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Source shared validation library
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
-  source "${SCRIPT_DIR}/lib/validate.sh"
-fi
-
 DEVICE="${1:?device required}"
 
 # Validate device name to prevent path traversal
-if ! validate_device_name "$DEVICE"; then
-  exit 1
-fi
-
-# Validate GITHUB_WORKSPACE to prevent path traversal
-if ! validate_workspace; then
+if [[ ! "$DEVICE" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+  echo "ERROR: Invalid device name format: $DEVICE" >&2
   exit 1
 fi
 
 # Validate GITHUB_ENV to prevent path traversal
-if ! validate_github_env; then
+if [[ ! "$GITHUB_ENV" =~ ^/ ]]; then
+  echo "ERROR: GITHUB_ENV must be an absolute path: $GITHUB_ENV" >&2
   exit 1
 fi
 
-# Simple error logging function (same as in telegram.sh)
-log_err() { printf "[package_anykernel] %s\n" "$*" >&2; }
-
-# Determine kernel variant for ZIP naming and notifications
-# Based on NETHUNTER_ENABLED and NETHUNTER_CONFIG_LEVEL environment variables
-if [ "${NETHUNTER_ENABLED:-false}" == "true" ]; then
-  if [ "${NETHUNTER_CONFIG_LEVEL:-basic}" == "full" ]; then
-    ZIP_VARIANT="full-nethunter"
-  else
-    ZIP_VARIANT="basic-nethunter"
-  fi
-else
-  ZIP_VARIANT="normal"
+if [[ "$GITHUB_ENV" == *".."* ]]; then
+  echo "ERROR: GITHUB_ENV contains invalid characters: $GITHUB_ENV" >&2
+  exit 1
 fi
 
-# Export for Telegram notifications
-printf "ZIP_VARIANT=%s\n" "$ZIP_VARIANT" >> "$GITHUB_ENV"
+# Read NetHunter configuration status
+NETHUNTER_CONFIG_ENABLED="${NETHUNTER_CONFIG_ENABLED:-false}"
+echo "NETHUNTER_CONFIG_ENABLED=${NETHUNTER_CONFIG_ENABLED}" >> "$GITHUB_ENV"
 
-
-# Determine kernel directory with proper validation
-KERNEL_DIR="${KERNEL_DIR:-${GITHUB_WORKSPACE}/kernel}"
-KERNELDIR="${KERNEL_DIR}/out/arch/arm64/boot"
+KERNELDIR="kernel/out/arch/arm64/boot"
 test -d "$KERNELDIR"
 
 rm -f anykernel/Image* anykernel/zImage 2>/dev/null || true
@@ -60,9 +39,8 @@ for f in Image.gz-dtb Image-dtb Image.gz Image.lz4 Image zImage; do
 done
 
 if [ -z "$KIMG" ]; then
-  printf "ERROR: No kernel image found in %s\n" "$KERNELDIR" >&2
-  printf "Available files:\n" >&2
-  ls -la "$KERNELDIR" >&2 || true
+  echo "No kernel image found in ${KERNELDIR}"
+  ls -la "$KERNELDIR" || true
   exit 1
 fi
 
@@ -76,6 +54,7 @@ Image: ${KIMG}
 CI: ${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}
 SHA: ${GITHUB_SHA}
 
+NetHunter configurations: ${NETHUNTER_CONFIG_ENABLED:-false}
 Custom config enabled: ${CUSTOM_CONFIG_ENABLED:-false}
 CONFIG_LOCALVERSION: ${CFG_LOCALVERSION:--CI}
 CONFIG_DEFAULT_HOSTNAME: ${CFG_DEFAULT_HOSTNAME:-CI Builder}
@@ -88,53 +67,24 @@ KSTR="✨ ${DEVICE} • Linux ${KERNEL_VERSION:-unknown} • CI ${GITHUB_RUN_ID}
 # More comprehensive sanitization for sed operations
 KSTR_ESC=$(printf '%s\n' "$KSTR" | sed 's/[[\.*^$()+?{|]/\\&/g; s/&/\\&/g; s/\//\\\//g; s/\n/\\n/g')
 
-# Validate that the sanitized string doesn't contain newlines or control characters
-if [[ "$KSTR_ESC" == *$'\n'* ]] || [[ "$KSTR_ESC" == *$'\r'* ]]; then
-  printf "ERROR: Sanitized string contains newlines or control characters\n" >&2
+# Validate that the sanitized string doesn't contain problematic sequences
+if [[ "$KSTR_ESC" =~ \$\(|\`\(|sh\(|bash\(|\|.*\>|>>.*\> ]]; then
+  echo "ERROR: Sanitized string contains potentially dangerous sequences" >&2
   exit 1
 fi
 
-# Validate file exists before sed operations
-if [ ! -f anykernel/anykernel.sh ]; then
-  printf "ERROR: anykernel/anykernel.sh not found\n" >&2
-  exit 1
-fi
+sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/anykernel.sh || true
+sed -i "s|^[[:space:]]*device.name1=.*|device.name1=${DEVICE}|" anykernel/anykernel.sh || true
 
-sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/anykernel.sh
-
-# Disable device check to allow flashing on any device
-sed -i "s|^[[:space:]]*do.devicecheck=.*|do.devicecheck=0|" anykernel/anykernel.sh
-# If no do.devicecheck line, add it
-if ! grep -q "^[[:space:]]*do.devicecheck=" anykernel/anykernel.sh; then
-  sed -i "/^properties()/a\\do.devicecheck=0" anykernel/anykernel.sh
-fi
-
-# Remove all device name lines to allow flashing on any device
-sed -i "/^[[:space:]]*device.name/d" anykernel/anykernel.sh
-
-# Set up for A/B device flashing - auto-detect boot partition
-# This allows flashing to both boot_a and boot_b on A/B devices
-sed -i "s|^[[:space:]]*IS_SLOT_DEVICE=.*|IS_SLOT_DEVICE=1|" anykernel/anykernel.sh
-
-# Set BLOCK to auto-detect the correct partition
-sed -i "s|^[[:space:]]*BLOCK=.*|BLOCK=auto|" anykernel/anykernel.sh
-
-ZIP_NAME="Kernel-${DEVICE}-${ZIP_VARIANT}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.zip"
-
-# Validate ZIP_NAME doesn't contain path traversal
-if [[ "$ZIP_NAME" =~ \.\. ]] || [[ "$ZIP_NAME" =~ ^/ ]]; then
-  printf "ERROR: Invalid ZIP name: %s\n" "$ZIP_NAME" >&2
-  exit 1
-fi
-
-(cd anykernel && zip -r9 "../${ZIP_NAME}" . -x "*.git*" ) || { printf "ERROR: ZIP creation failed\n"; exit 1; }
+ZIP_NAME="Kernel-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.zip"
+(cd anykernel && zip -r9 "../${ZIP_NAME}" . -x "*.git*" )
 
 printf "Built for %s | Linux %s | CI %s/%s\n" \
   "${DEVICE}" "${KERNEL_VERSION:-unknown}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \
-  | zip -z "../${ZIP_NAME}" >/dev/null || log_err "Failed to add comment to ZIP"
+  | zip -z "../${ZIP_NAME}" >/dev/null || true
 
-printf "ZIP_NAME=%s\n" "$ZIP_NAME" >> "$GITHUB_ENV"
-printf "KERNEL_IMAGE_FILE=%s\n" "$KIMG" >> "$GITHUB_ENV"
+echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
+echo "KERNEL_IMAGE_FILE=${KIMG}" >> "$GITHUB_ENV"
 
 # No boot image variables to set since image repacking process has been removed
 # Only AnyKernel ZIP is generated for flashing
