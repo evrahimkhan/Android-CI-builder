@@ -112,10 +112,12 @@ fi
 # Remove all device name lines to allow flashing on any device
 sed -i "/^[[:space:]]*device.name/d" anykernel/anykernel.sh
 
-# Set block device ID - commonly boot or boot_a
-# Use BOOT_PARTITION env var to override, default to boot
-BOOT_PARTITION="${BOOT_PARTITION:-boot}"
-sed -i "s|^[[:space:]]*id=.*|id=${BOOT_PARTITION}|" anykernel/anykernel.sh
+# Set up for A/B device flashing - auto-detect boot partition
+# This allows flashing to both boot_a and boot_b on A/B devices
+sed -i "s|^[[:space:]]*IS_SLOT_DEVICE=.*|IS_SLOT_DEVICE=1|" anykernel/anykernel.sh
+
+# Set BLOCK to auto-detect the correct partition
+sed -i "s|^[[:space:]]*BLOCK=.*|BLOCK=auto|" anykernel/anykernel.sh
 
 ZIP_NAME="Kernel-${DEVICE}-${ZIP_VARIANT}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.zip"
 
