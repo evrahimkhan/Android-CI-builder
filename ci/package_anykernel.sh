@@ -76,6 +76,21 @@ fi
 sed -i "s|^[[:space:]]*kernel.string=.*|kernel.string=${KSTR_ESC}|" anykernel/anykernel.sh || true
 sed -i "s|^[[:space:]]*device.name1=.*|device.name1=${DEVICE}|" anykernel/anykernel.sh || true
 
+# Disable device check to allow flashing on any device
+sed -i "s|^[[:space:]]*do.devicecheck=.*|do.devicecheck=0|" anykernel/anykernel.sh || true
+if ! grep -q "^[[:space:]]*do.devicecheck=" anykernel/anykernel.sh; then
+  sed -i "/^properties()/a\\do.devicecheck=0" anykernel/anykernel.sh || true
+fi
+
+# Remove all device name lines to allow flashing on any device
+sed -i "/^[[:space:]]*device.name/d" anykernel/anykernel.sh || true
+
+# Set up for A/B device flashing - auto-detect boot partition
+sed -i "s|^[[:space:]]*IS_SLOT_DEVICE=.*|IS_SLOT_DEVICE=1|" anykernel/anykernel.sh || true
+
+# Set BLOCK to auto-detect the correct partition
+sed -i "s|^[[:space:]]*BLOCK=.*|BLOCK=auto|" anykernel/anykernel.sh || true
+
 ZIP_NAME="Kernel-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.zip"
 (cd anykernel && zip -r9 "../${ZIP_NAME}" . -x "*.git*" )
 
