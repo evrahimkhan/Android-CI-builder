@@ -25,7 +25,6 @@ NETHUNTER_CONFIG_ENABLED="${NETHUNTER_CONFIG_ENABLED:-false}"
 echo "NETHUNTER_CONFIG_ENABLED=${NETHUNTER_CONFIG_ENABLED}" >> "$GITHUB_ENV"
 
 KERNELDIR="kernel/out/arch/arm64/boot"
-MODULESDIR="kernel/out/modules"
 test -d "$KERNELDIR"
 
 rm -f anykernel/Image* anykernel/zImage 2>/dev/null || true
@@ -92,35 +91,8 @@ sed -i "s|^[[:space:]]*IS_SLOT_DEVICE=.*|IS_SLOT_DEVICE=1|" anykernel/anykernel.
 # Set BLOCK to auto-detect the correct partition
 sed -i "s|^[[:space:]]*BLOCK=.*|BLOCK=auto|" anykernel/anykernel.sh || true
 
-# Include RTL8188eus driver module if available
-# Modules are flashed to /system/lib/modules/ on the device
-if [ -d "${MODULESDIR}" ]; then
-  # Create system/lib/modules directory for AnyKernel
-  mkdir -p anykernel/system/lib/modules
-  
-  # Find and copy all .ko modules from modules output
-  KO_COUNT=0
-  for ko in "${MODULESDIR}"/*.ko; do
-    if [ -f "$ko" ]; then
-      cp -f "$ko" anykernel/system/lib/modules/
-      echo "Including module: $(basename "$ko")"
-      KO_COUNT=$((KO_COUNT + 1))
-    fi
-  done
-  
-  if [ "$KO_COUNT" -gt 0 ]; then
-    echo "Included $KO_COUNT kernel module(s) in AnyKernel ZIP"
-    
-    # Set proper permissions on modules
-    chmod 644 anykernel/system/lib/modules/*.ko 2>/dev/null || true
-  fi
-fi
-
-# Ensure modules directory is included in ZIP
-if [ -d "anykernel/system/lib/modules" ]; then
-  # Verify modules are readable
-  ls -la anykernel/system/lib/modules/ || true
-fi
+# RTL8188eu driver is now built-in to the kernel (via rtl8xxxu)
+# No external modules needed - driver is included in kernel Image
 
 ZIP_NAME="Kernel-${DEVICE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.zip"
 (cd anykernel && zip -r9 "../${ZIP_NAME}" . -x "*.git*" )

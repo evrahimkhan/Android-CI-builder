@@ -305,7 +305,7 @@ build_rtl8188eus_driver() {
   
   printf "\n"
   printf "==============================================\n"
-  printf "Building RTL8188eus driver as external module...\n"
+  printf "Enabling RTL8188eu driver (in-kernel rtl8xxxu)...\n"
   printf "==============================================\n"
   
   if [ -f "${GITHUB_WORKSPACE}/ci/clone_rtl8188eus_driver.sh" ]; then
@@ -315,7 +315,7 @@ build_rtl8188eus_driver() {
   fi
   
   printf "\n==============================================\n"
-  printf "RTL8188eus driver build complete\n"
+  printf "RTL8188eu driver configuration complete\n"
   printf "==============================================\n"
 }
 

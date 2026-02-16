@@ -355,27 +355,26 @@ apply_nethunter_wireless() {
   safe_set_kcfg_bool USB_NET_RNDIS_WLAN y
 }
 
-# RTL8188eus USB Wireless Driver Configuration
+# RTL8188eu USB Wireless Driver Configuration
+# Uses in-kernel rtl8xxxu driver which supports RTL8188EU/CU/RU and more
 apply_rtl8188eus_driver() {
-  printf "Applying RTL8188eus driver configuration...\n"
+  printf "Applying RTL8188eu driver configuration...\n"
   
-  # Enable required kernel configs for external module build
-  # These are needed for the driver to load properly
-  safe_set_kcfg_bool STAGING y
+  # Enable rtl8xxxu - in-kernel driver for Realtek USB WiFi chips
+  # Supports: RTL8188EU, RTL8188CU, RTL8188RU, RTL8723AU, RTL8191CU, RTL8192CU
+  safe_set_kcfg_bool RTL8XXXU y
+  safe_set_kcfg_bool RTL8XXXU_UNTESTED y
   
-  # Required dependencies for the driver
+  # Required dependencies
   safe_set_kcfg_bool WLAN y
   safe_set_kcfg_bool USB y
   safe_set_kcfg_bool CFG80211 y
   safe_set_kcfg_bool MAC80211 y
   
-  # Wireless extensions (legacy)
-  safe_set_kcfg_bool WIRELESS_EXT y
-  
   # USB wireless support
   safe_set_kcfg_bool USB_WLAN y
   
-  printf "RTL8188eus driver configuration applied (external module)\n"
+  printf "RTL8188eu driver enabled (in-kernel rtl8xxxu)\n"
 }
 
 # Tier 5: SDR Support (4.x+, hardware dependent)
