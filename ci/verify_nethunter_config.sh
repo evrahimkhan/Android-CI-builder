@@ -6,12 +6,16 @@
 set -euo pipefail
 
 CONFIG_LEVEL="${1:-basic}"
+RTL8188EUS_ENABLED="${RTL8188EUS_ENABLED:-false}"
 
 # Validate input
 if [[ ! "$CONFIG_LEVEL" =~ ^(basic|full)$ ]]; then
     printf "[verify-nethunter] ERROR: Invalid config level: %s (must be 'basic' or 'full')\n" "$CONFIG_LEVEL" >&2
     exit 2
 fi
+
+# Convert RTL8188EUS_ENABLED to lowercase
+RTL8188EUS_ENABLED=$(echo "$RTL8188EUS_ENABLED" | tr '[:upper:]' '[:lower:]')
 
 # Determine kernel directory with proper validation
 KERNEL_DIR="${KERNEL_DIR:-${GITHUB_WORKSPACE:-.}/kernel}"
@@ -258,6 +262,13 @@ fi
 
 if [ "${CONFIGS_FOUND}" -eq "${CONFIGS_TOTAL}" ]; then
     log_info "All NetHunter configurations verified successfully!"
+    echo ""
+    echo "=============================================="
+    echo "Verification Summary"
+    echo "=============================================="
+    echo "NetHunter Config Level: ${CONFIG_LEVEL}"
+    echo "RTL8188eu Driver: $([ "$RTL8188EUS_ENABLED" == "true" ] && echo "Enabled" || echo "Disabled")"
+    echo "Configs checked: ${CONFIGS_FOUND}/${CONFIGS_TOTAL}"
     echo ""
     log_info "NetHunter configuration verification: PASSED"
     exit 0

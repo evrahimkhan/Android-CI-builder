@@ -422,11 +422,12 @@ jobs:
           fi
 
       - name: Verify NetHunter Configuration
-        if: ${{ inputs.enable_nethunter_config == 'true' }}
+        if: ${{ inputs.enable_nethunter_config == 'true' || inputs.enable_rtl8188eus_driver == 'true' }}
         shell: bash
         env:
           NETHUNTER_ENABLED: ${{ inputs.enable_nethunter_config }}
           NETHUNTER_CONFIG_LEVEL: ${{ inputs.nethunter_config_level }}
+          RTL8188EUS_ENABLED: ${{ inputs.enable_rtl8188eus_driver }}
         run: |
           set -euo pipefail
           LOG_DIR="${{ github.workspace }}/kernel"

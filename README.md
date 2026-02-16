@@ -256,3 +256,48 @@ grep -A 20 "NetHunter Kernel Configuration" build.log
 - NetHunter configurations (if enabled) are applied with automatic kernel version detection
 - Artifacts will be available for download after completion
 - Telegram notifications and direct file will be sent if `TG_TOKEN` and `TG_CHAT_ID` configured.
+
+### RTL8188eus USB WiFi Driver Support
+
+This project supports building kernels with **RTL8188eus USB WiFi driver** built-in for external USB wireless adapters.
+
+#### Supported Chips
+- RTL8188EU
+- RTL8188CU
+- RTL8188RU
+- RTL8723AU
+- RTL8191CU
+- RTL8192CU
+
+#### How to Enable
+
+1. Go to **Actions** → **Android Kernel CI** → **Run workflow**
+2. In the workflow dispatch form, set:
+   - **Enable RTL8188eus USB WiFi driver (built-in)**: `true`
+3. Fill in other required parameters (kernel URL, branch, device, defconfig)
+4. Click **Run workflow**
+
+#### How It Works
+
+- Uses the **in-kernel rtl8xxxu driver** (no external patching needed)
+- Driver is **built directly into the kernel** (not as a loadable module)
+- Works **independently** from NetHunter configuration
+- Can be enabled with or without NetHunter support
+
+#### Usage Notes
+
+- The driver is built into the kernel Image, no separate `.ko` module needed
+- Works with Kali NetHunter for external WiFi adapter support
+- Compatible with kernel versions 4.x, 5.x, and 6.x+
+
+#### Troubleshooting
+
+**Driver not appearing in kernel:**
+- Verify `enable_rtl8188eus_driver` is set to `true`
+- Check build logs for "RTL8188eu driver" configuration messages
+- The driver uses in-kernel `rtl8xxxu` - check if your kernel has this driver
+
+**Build fails:**
+- Check if your kernel source supports RTL8XXXU driver
+- Try with a different kernel version
+- Check build.log for specific errors
