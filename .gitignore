@@ -23,3 +23,11 @@ _bmad-output/
 _bmad/
 
 .opencode/
+
+# Android kernel build
+kernel/
+clang/
+external/
+
+# Telegram bot
+tg-creds.json
