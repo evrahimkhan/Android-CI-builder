@@ -222,20 +222,34 @@ apply_nethunter_config() {
   set +u 2>/dev/null
   local nethunter_enabled="${NETHUNTER_ENABLED:-false}"
   local nethunter_level="${NETHUNTER_CONFIG_LEVEL:-basic}"
+  local rtl8188eus_enabled="${RTL8188EUS_ENABLED:-false}"
   set -u 2>/dev/null
   
   # Convert to lowercase for comparison
   nethunter_enabled=$(echo "$nethunter_enabled" | tr '[:upper:]' '[:lower:]')
+  rtl8188eus_enabled=$(echo "$rtl8188eus_enabled" | tr '[:upper:]' '[:lower:]')
   
-  # Check if enabled (true, 1, yes)
+  # Check if any config is enabled
+  local any_enabled=false
   if [[ "$nethunter_enabled" == "true" ]] || [[ "$nethunter_enabled" == "1" ]] || [[ "$nethunter_enabled" == "yes" ]]; then
+    any_enabled=true
     printf "NetHunter configuration ENABLED\n"
-  else
-    printf "NetHunter configuration disabled (value='%s')\n" "$nethunter_enabled"
+  fi
+  
+  if [[ "$rtl8188eus_enabled" == "true" ]] || [[ "$rtl8188eus_enabled" == "1" ]] || [[ "$rtl8188eus_enabled" == "yes" ]]; then
+    any_enabled=true
+    printf "RTL8188eu driver ENABLED\n"
+  fi
+  
+  if [ "$any_enabled" = false ]; then
+    printf "NetHunter/RTL8188eu configuration disabled (nethunter='%s', rtl8188eus='%s')\n" "$nethunter_enabled" "$rtl8188eus_enabled"
     return 0
   fi
 
   printf "Configuration level: %s\n\n" "$nethunter_level"
+  
+  # Export RTL8188EUS_ENABLED so it's available to the config script
+  export RTL8188EUS_ENABLED="$rtl8188eus_enabled"
   
   # Source the NetHunter config script
   if [ -f "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" ]; then

@@ -123,7 +123,7 @@ jobs:
           fi
 
       - name: Run NetHunter Config Tests
-        if: inputs.enable_nethunter_config == 'true'
+        if: inputs.enable_nethunter_config == 'true' || inputs.enable_rtl8188eus_driver == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -135,6 +135,9 @@ jobs:
           ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
           log() { printf "[%s] %s\n" "$(ts)" "$*"; }
           log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
+          
+          # Export RTL8188EUS_ENABLED for the test
+          export RTL8188EUS_ENABLED="${{ inputs.enable_rtl8188eus_driver }}"
           
           log_step "Starting: NetHunter Configuration Tests"
           bash ci/test_nethunter_config.sh 2>&1 | tee -a "$LOG_FILE"

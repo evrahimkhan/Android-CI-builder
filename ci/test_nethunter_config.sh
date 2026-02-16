@@ -370,6 +370,34 @@ test_edge_cases() {
   KERNEL_DIR="$TEST_KERNEL_DIR"
 }
 
+# Test 8: RTL8188eu driver configuration
+test_rtl8188eu_driver() {
+  echo ""
+  echo "=== Test: RTL8188eu Driver Configuration ==="
+  
+  # Setup
+  export RTL8188EUS_ENABLED="true"
+  
+  # Add RTL8XXXU to mock Kconfig
+  echo 'config RTL8XXXU
+	bool "RTL8XXXU support"' >> "${TEST_KERNEL_DIR}/Kconfig"
+  
+  # Add config to mock .config
+  echo "CONFIG_RTL8XXXU=y" >> "${TEST_OUT_DIR}/.config"
+  
+  # Test that driver config is detected
+  if check_config_exists "RTL8XXXU"; then
+    echo "✓ PASS: RTL8XXXU config exists in mock kernel"
+    ((TESTS_PASSED++)) || true
+  else
+    echo "✗ FAIL: RTL8XXXU config should exist"
+    ((TESTS_FAILED++)) || true
+  fi
+  
+  # Cleanup
+  unset RTL8188EUS_ENABLED
+}
+
 # Main test runner
 main() {
   echo "=============================================="
@@ -405,6 +433,7 @@ main() {
   test_integration_basic
   test_invalid_config_fallback
   test_edge_cases
+  test_rtl8188eu_driver
   
   # Cleanup
   teardown

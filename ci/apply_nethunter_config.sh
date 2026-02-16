@@ -362,19 +362,35 @@ apply_rtl8188eus_driver() {
   
   # Enable rtl8xxxu - in-kernel driver for Realtek USB WiFi chips
   # Supports: RTL8188EU, RTL8188CU, RTL8188RU, RTL8723AU, RTL8191CU, RTL8192CU
-  safe_set_kcfg_bool RTL8XXXU y
-  safe_set_kcfg_bool RTL8XXXU_UNTESTED y
+  # Use set_kcfg_bool directly to bypass existence check (driver may be in different location)
   
-  # Required dependencies
-  safe_set_kcfg_bool WLAN y
-  safe_set_kcfg_bool USB y
-  safe_set_kcfg_bool CFG80211 y
-  safe_set_kcfg_bool MAC80211 y
+  # Core dependencies - force enable
+  set_kcfg_bool WLAN y
+  set_kcfg_bool USB y
+  set_kcfg_bool CFG80211 y
+  set_kcfg_bool MAC80211 y
+  set_kcfg_bool USB_WLAN y
   
-  # USB wireless support
-  safe_set_kcfg_bool USB_WLAN y
+  # Try to enable rtl8xxxu driver (may have different name in different kernels)
+  set_kcfg_bool RTL8XXXU y
+  set_kcfg_bool RTL8XXXU_UNTESTED y
   
-  printf "RTL8188eu driver enabled (in-kernel rtl8xxxu)\n"
+  # Also try alternative config names
+  set_kcfg_bool RTL8723AU y
+  set_kcfg_bool RTL8192CU y
+  set_kcfg_bool RTL8192EU y
+  
+  # Try staging option
+  set_kcfg_bool STAGING y
+  
+  # Force add these to .config if not present
+  for cfg in CONFIG_RTL8XXXU CONFIG_RTL8XXXU_UNTESTED CONFIG_WLAN CONFIG_USB CONFIG_CFG80211 CONFIG_MAC80211; do
+    if ! grep -q "^${cfg}=" "$KERNEL_DIR/out/.config" 2>/dev/null; then
+      echo "${cfg}=y" >> "$KERNEL_DIR/out/.config" 2>/dev/null || true
+    fi
+  done
+  
+  printf "RTL8188eu driver config applied\n"
 }
 
 # Tier 5: SDR Support (4.x+, hardware dependent)
@@ -500,6 +516,15 @@ validate_config_level() {
 # Main configuration dispatcher
 apply_nethunter_config() {
   local level="${NETHUNTER_CONFIG_LEVEL:-basic}"
+  set +u 2>/dev/null
+  local rtl8188eus_enabled="${RTL8188EUS_ENABLED:-false}"
+  set -u 2>/dev/null
+  
+  rtl8188eus_enabled=$(echo "$rtl8188eus_enabled" | tr '[:upper:]' '[:lower:]')
+  local apply_rtl=false
+  if [[ "$rtl8188eus_enabled" == "true" ]] || [[ "$rtl8188eus_enabled" == "1" ]] || [[ "$rtl8188eus_enabled" == "yes" ]]; then
+    apply_rtl=true
+  fi
   
   # Validate config level
   if ! validate_config_level "$level"; then
@@ -548,8 +573,12 @@ apply_nethunter_config() {
     fi
   fi
   
-  # Always apply RTL8188eus driver (built-in)
-  apply_rtl8188eus_driver
+  # Apply RTL8188eus driver only if enabled
+  if [ "$apply_rtl" = true ]; then
+    apply_rtl8188eus_driver
+  else
+    printf "RTL8188eu driver not enabled (RTL8188EUS_ENABLED=%s)\n" "$rtl8188eus_enabled"
+  fi
   
   # Clear trap on success
   trap - ERR
@@ -563,8 +592,14 @@ apply_nethunter_config() {
 }
 
 # Main execution
-if [ "${NETHUNTER_ENABLED:-false}" != "true" ]; then
-  printf "NetHunter configuration disabled (set NETHUNTER_ENABLED=true to enable)\n"
+# Allow RTL8188EUS to work independently from NETHUNTER
+set +u 2>/dev/null
+RTL8188EUS_ENABLED_CHECK="${RTL8188EUS_ENABLED:-false}"
+set -u 2>/dev/null
+RTL8188EUS_ENABLED_CHECK=$(echo "$RTL8188EUS_ENABLED_CHECK" | tr '[:upper:]' '[:lower:]')
+
+if [ "${NETHUNTER_ENABLED:-false}" != "true" ] && [ "$RTL8188EUS_ENABLED_CHECK" != "true" ] && [ "$RTL8188EUS_ENABLED_CHECK" != "1" ] && [ "$RTL8188EUS_ENABLED_CHECK" != "yes" ]; then
+  printf "NetHunter configuration disabled (set NETHUNTER_ENABLED=true or RTL8188EUS_ENABLED=true to enable)\n"
   exit 0
 fi
 

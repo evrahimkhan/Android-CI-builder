@@ -204,6 +204,31 @@ if [ "${CONFIG_LEVEL}" == "full" ]; then
     fi
 fi
 
+# Check RTL8188eu driver configuration
+echo ""
+echo "Checking RTL8188eu Wireless Driver configurations..."
+
+# RTL8XXXU - in-kernel driver for RTL8188EU/CU/RU
+if check_config "RTL8XXXU" "false"; then
+    log_info "✓ CONFIG_RTL8XXXU present (in-kernel driver)"
+else
+    log_warn "✗ CONFIG_RTL8XXXU missing (optional - in-kernel driver)"
+fi
+
+# RTL8XXXU_UNTESTED - enables support for untested devices
+if check_config "RTL8XXXU_UNTESTED" "false"; then
+    log_info "✓ CONFIG_RTL8XXXU_UNTESTED present"
+else
+    log_warn "✗ CONFIG_RTL8XXXU_UNTESTED missing (optional)"
+fi
+
+# USB WLAN support
+if check_config "USB_WLAN" "false"; then
+    log_info "✓ CONFIG_USB_WLAN present"
+else
+    log_warn "✗ CONFIG_USB_WLAN missing (optional)"
+fi
+
 echo ""
 echo "=============================================="
 echo "Verification Summary"
