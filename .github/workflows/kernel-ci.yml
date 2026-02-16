@@ -68,6 +68,13 @@ on:
         type: choice
         options: ["basic", "full"]
 
+      enable_rtl8188eus_driver:
+        description: Enable RTL8188eus USB WiFi driver (built-in)
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
 
 jobs:
   build:
@@ -305,6 +312,7 @@ jobs:
           export CFG_CC_VERSION_TEXT="${{ inputs.config_cc_version_text }}"
           export NETHUNTER_ENABLED="${{ inputs.enable_nethunter_config }}"
           export NETHUNTER_CONFIG_LEVEL="${{ inputs.nethunter_config_level }}"
+          export RTL8188EUS_ENABLED="${{ inputs.enable_rtl8188eus_driver }}"
           
           log_step "Starting: Build Kernel (${{ inputs.defconfig }})"
           bash ci/build_kernel.sh "${{ inputs.defconfig }}" 2>&1 | tee -a "$LOG_FILE"
@@ -371,6 +379,7 @@ jobs:
           export CFG_CC_VERSION_TEXT="${{ inputs.config_cc_version_text }}"
           export NETHUNTER_ENABLED="${{ inputs.enable_nethunter_config }}"
           export NETHUNTER_CONFIG_LEVEL="${{ inputs.nethunter_config_level }}"
+          export RTL8188EUS_ENABLED="${{ inputs.enable_rtl8188eus_driver }}"
           
           log_step "Starting: Retry Build Kernel"
           bash ci/build_kernel.sh "${{ inputs.defconfig }}" 2>&1 | tee -a "$LOG_FILE"

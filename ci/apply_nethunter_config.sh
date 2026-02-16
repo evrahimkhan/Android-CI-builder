@@ -355,6 +355,36 @@ apply_nethunter_wireless() {
   safe_set_kcfg_bool USB_NET_RNDIS_WLAN y
 }
 
+# RTL8188eus USB Wireless Driver Configuration
+apply_rtl8188eus_driver() {
+  printf "Applying RTL8188eus driver configuration...\n"
+  
+  # Check if driver was patched into kernel source
+  if [ -d "$KERNEL_DIR/drivers/staging/rtl8188eu" ]; then
+    printf "RTL8188eus driver found in staging\n"
+    
+    # Staging support required
+    safe_set_kcfg_bool STAGING y
+    safe_set_kcfg_bool STAGING_EXCLUDE_BUILD y
+    
+    # Enable RTL8188EU as built-in (=y)
+    safe_set_kcfg_bool RTL8188EU y
+    
+    # Required dependencies
+    safe_set_kcfg_bool WLAN y
+    safe_set_kcfg_bool USB y
+    safe_set_kcfg_bool WIRELESS_EXT y
+    safe_set_kcfg_bool WEXT_PRIV y
+    
+    # USB wireless support
+    safe_set_kcfg_bool USB_WLAN y
+    
+    printf "RTL8188eus driver enabled as built-in\n"
+  else
+    printf "Warning: RTL8188eus driver not found in staging, skipping driver configuration\n"
+  fi
+}
+
 # Tier 5: SDR Support (4.x+, hardware dependent)
 apply_nethunter_sdr() {
   printf "Applying SDR configuration...\n"
@@ -525,6 +555,9 @@ apply_nethunter_config() {
       apply_nethunter_nongki_extras
     fi
   fi
+  
+  # Always apply RTL8188eus driver (built-in)
+  apply_rtl8188eus_driver
   
   # Clear trap on success
   trap - ERR
