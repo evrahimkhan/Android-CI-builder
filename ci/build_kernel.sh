@@ -210,37 +210,6 @@ fi
 # Apply custom kconfig branding if enabled
 apply_custom_kconfig_branding
 
-# Clone and patch RTL8188eus driver into kernel source
-clone_rtl8188eus_driver() {
-  set +u 2>/dev/null
-  local rtl8188eus_enabled="${RTL8188EUS_ENABLED:-false}"
-  set -u 2>/dev/null
-  
-  rtl8188eus_enabled=$(echo "$rtl8188eus_enabled" | tr '[:upper:]' '[:lower:]')
-  
-  if [[ "$rtl8188eus_enabled" != "true" ]] && [[ "$rtl8188eus_enabled" != "1" ]] && [[ "$rtl8188eus_enabled" != "yes" ]]; then
-    printf "RTL8188eus driver disabled (value='%s')\n" "$rtl8188eus_enabled"
-    return 0
-  fi
-  
-  printf "\n"
-  printf "==============================================\n"
-  printf "Cloning RTL8188eus driver into kernel source...\n"
-  printf "==============================================\n"
-  
-  if [ -f "${GITHUB_WORKSPACE}/ci/clone_rtl8188eus_driver.sh" ]; then
-    bash "${GITHUB_WORKSPACE}/ci/clone_rtl8188eus_driver.sh" 2>&1 | tee -a "$LOG"
-  else
-    printf "Warning: RTL8188eus driver script not found\n" | tee -a "$LOG"
-  fi
-  
-  printf "\n==============================================\n"
-  printf "RTL8188eus driver integration complete\n"
-  printf "==============================================\n"
-}
-
-clone_rtl8188eus_driver
-
 # CRITICAL: Apply NetHunter configuration BEFORE final olddefconfig
 # This ensures NetHunter configs are part of the final configuration
 apply_nethunter_config() {
@@ -320,6 +289,41 @@ else
   printf "SUCCESS=0\n" >> "$GITHUB_ENV"
   cp -f "$LOG" "${GITHUB_WORKSPACE}/kernel/error.log" 2>/dev/null || true
 fi
+
+# Build RTL8188eus driver as external module (AFTER kernel build)
+build_rtl8188eus_driver() {
+  set +u 2>/dev/null
+  local rtl8188eus_enabled="${RTL8188EUS_ENABLED:-false}"
+  set -u 2>/dev/null
+  
+  rtl8188eus_enabled=$(echo "$rtl8188eus_enabled" | tr '[:upper:]' '[:lower:]')
+  
+  if [[ "$rtl8188eus_enabled" != "true" ]] && [[ "$rtl8188eus_enabled" != "1" ]] && [[ "$rtl8188eus_enabled" != "yes" ]]; then
+    printf "RTL8188eus driver disabled (value='%s')\n" "$rtl8188eus_enabled"
+    return 0
+  fi
+  
+  printf "\n"
+  printf "==============================================\n"
+  printf "Building RTL8188eus driver as external module...\n"
+  printf "==============================================\n"
+  
+  if [ -f "${GITHUB_WORKSPACE}/ci/clone_rtl8188eus_driver.sh" ]; then
+    bash "${GITHUB_WORKSPACE}/ci/clone_rtl8188eus_driver.sh" 2>&1 | tee -a "$LOG"
+  else
+    printf "Warning: RTL8188eus driver script not found\n" | tee -a "$LOG"
+  fi
+  
+  printf "\n==============================================\n"
+  printf "RTL8188eus driver build complete\n"
+  printf "==============================================\n"
+}
+
+# Build RTL8188eus driver only if kernel build succeeded
+if [ "$BUILD_RC" -eq 0 ]; then
+  build_rtl8188eus_driver
+fi
+
 END="$(date +%s)"
 printf "BUILD_TIME=%s\n" "$((END-START))" >> "$GITHUB_ENV"
 

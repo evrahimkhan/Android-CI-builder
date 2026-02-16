@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # RTL8188eus Driver Integration Script
-# Clones and patches the rtl8188eus driver into kernel source tree
+# Builds the rtl8188eus driver as an external module
 # Driver source: https://github.com/aircrack-ng/rtl8188eus
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,17 +12,19 @@ if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
 fi
 
 RTL8188EUS_REPO="${RTL8188EUS_REPO:-https://github.com/aircrack-ng/rtl8188eus}"
-RTL8188EUS_BRANCH="${RTL8188EUS_BRANCH:-master}"
+RTL8188EUS_BRANCH="${RTL8188EUS_BRANCH:-v5.7.6.1}"
 
 # Kernel directory
 if [[ -n "${GITHUB_WORKSPACE:-}" ]]; then
   KERNEL_DIR="${GITHUB_WORKSPACE}/kernel"
+  EXTERNAL_DIR="${GITHUB_WORKSPACE}/external"
 else
   KERNEL_DIR="kernel"
+  EXTERNAL_DIR="external"
 fi
 
-# Staging driver directory
-STAGING_DRIVER_DIR="${KERNEL_DIR}/drivers/staging/rtl8188eu"
+# External driver directory
+EXTERNAL_DRIVER_DIR="${EXTERNAL_DIR}/rtl8188eus"
 
 log_info() { printf "[rtl8188eus] %s\n" "$*"; }
 log_error() { printf "[rtl8188eus ERROR] %s\n" "$*" >&2; }
@@ -41,12 +43,8 @@ validate_rtl8188eus_url() {
   return 0
 }
 
-# Main clone and patch function
-clone_and_patch_driver() {
-  local work_dir
-  work_dir=$(mktemp -d)
-  trap "rm -rf '$work_dir'" EXIT
-
+# Clone driver to external directory
+clone_driver() {
   log_info "Cloning RTL8188eus driver from: $RTL8188EUS_REPO"
   log_info "Branch: $RTL8188EUS_BRANCH"
 
@@ -61,119 +59,95 @@ clone_and_patch_driver() {
     exit 1
   fi
 
-  # Clone driver to temporary directory
-  if ! git clone --depth=1 -b "$RTL8188EUS_BRANCH" "$RTL8188EUS_REPO" "$work_dir/driver" 2>&1; then
-    log_error "Failed to clone RTL8188eus driver"
+  # Create external directory
+  mkdir -p "$EXTERNAL_DIR"
+
+  # Check if already cloned
+  if [ -d "$EXTERNAL_DRIVER_DIR" ] && [ -f "$EXTERNAL_DRIVER_DIR/Makefile" ]; then
+    log_info "Driver already cloned, updating..."
+    cd "$EXTERNAL_DRIVER_DIR"
+    git fetch origin
+    git checkout "$RTL8188EUS_BRANCH" 2>/dev/null || true
+    cd - >/dev/null
+  else
+    # Clone driver to external directory
+    if ! git clone --depth=1 -b "$RTL8188EUS_BRANCH" "$RTL8188EUS_REPO" "$EXTERNAL_DRIVER_DIR" 2>&1; then
+      log_error "Failed to clone RTL8188eus driver"
+      exit 1
+    fi
+  fi
+
+  log_info "Driver cloned to: $EXTERNAL_DRIVER_DIR"
+}
+
+# Build the driver as external module
+build_driver() {
+  log_info "Building RTL8188eus driver..."
+
+  if [ ! -d "$EXTERNAL_DRIVER_DIR" ]; then
+    log_error "Driver source not found: $EXTERNAL_DRIVER_DIR"
     exit 1
   fi
 
-  # Check if already patched
-  if [ -d "$STAGING_DRIVER_DIR" ] && [ -f "$STAGING_DRIVER_DIR/core/rtw_core.c" ]; then
-    log_info "Driver already patched in kernel source"
-    return 0
-  fi
+  cd "$EXTERNAL_DRIVER_DIR"
 
-  # Create staging directory
-  mkdir -p "$STAGING_DRIVER_DIR"
-
-  # Copy driver files
-  log_info "Patching driver into kernel source: $STAGING_DRIVER_DIR"
+  # Set up build environment
+  export ARCH="${ARCH:-arm64}"
+  export SUBARCH="${SUBARCH:-arm64}"
+  export KERNEL_DIR="$KERNEL_DIR"
   
-  # Copy core files
-  if [ -d "$work_dir/driver/core" ]; then
-    cp -r "$work_dir/driver/core" "$STAGING_DRIVER_DIR/"
-  fi
-  
-  # Copy hal files
-  if [ -d "$work_dir/driver/hal" ]; then
-    cp -r "$work_dir/driver/hal" "$STAGING_DRIVER_DIR/"
-  fi
-  
-  # Copy include files
-  if [ -d "$work_dir/driver/include" ]; then
-    cp -r "$work_dir/driver/include" "$STAGING_DRIVER_DIR/"
-  fi
-  
-  # Copy os_dep files
-  if [ -d "$work_dir/driver/os_dep" ]; then
-    cp -r "$work_dir/driver/os_dep" "$STAGING_DRIVER_DIR/"
+  # Add clang to path if available
+  if [[ -n "${GITHUB_WORKSPACE:-}" ]] && [[ -d "${GITHUB_WORKSPACE}/clang/bin" ]]; then
+    export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
   fi
 
-  # Create Kconfig file
-  cat > "$STAGING_DRIVER_DIR/Kconfig" << 'KCONFIG_EOF'
-# SPDX-License-Identifier: GPL-2.0
-config RTL8188EU
-	tristate "Realtek RTL8188EU Wireless LAN NIC driver"
-	depends on WLAN && USB
-	select WIRELESS_EXT
-	select WEXT_PRIV
-	default n
-	help
-	  This option adds support for the Realtek RTL8188EU USB wireless
-	  adapter. This driver is typically used with TP-Link TL-WN725N
-	  and similar devices.
+  # Build as external module
+  # Use the kernel's build system
+  if [ -f "$KERNEL_DIR/scripts/config" ]; then
+    chmod +x "$KERNEL_DIR/scripts/config" 2>/dev/null || true
+  fi
 
-	  If built as a module, it will be called r8188eu.ko
-KCONFIG_EOF
+  # Clean previous builds
+  make clean 2>/dev/null || true
 
-  # Create Makefile for staging
-  cat > "$STAGING_DRIVER_DIR/Makefile" << 'MAKEFILE_EOF'
-# SPDX-License-Identifier: GPL-2.0
-obj-$(CONFIG_RTL8188EU) += r8188eu.o
-
-r8188eu-objs := \
-	core/rtw_core.o \
-	core/rtw_cmd.o \
-	core/rtw_debug.o \
-	core/rtw_efuse.o \
-	core/rtw_io.o \
-	core/rtw_ioctl_query.o \
-	core/rtw_ioctl_set.o \
-	core/rtw_mlme_ext.o \
-	core/rtw_pwrctrl.o \
-	core/rtw_recv.o \
-	core/rtw_security.o \
-	core/rtw_sta_mgt.o \
-	core/rtw_xmit.o \
-	hal/hal_intf.o \
-	hal/hal_com.o \
-	hal/hal_hci/hal_usb.o \
-	hal/rtl8188e/rtl8188e_xmit.o \
-	hal/rtl8188e/rtl8188e_recv.o \
-	hal/rtl8188e/rtl8188e_phycfg.o \
-	hal/rtl8188e/rtl8188e_mac.o \
-	hal/rtl8188e/rtl8188e_halinit.o \
-	hal/rtl8188e/rtl8188e_ops.o \
-	os_dep/osdep_service.o \
-	os_dep/os_intfs.o \
-	os_dep/usb_intf.o \
-	os_dep/usb_ops.o \
-	os_dep/ioctl_linux.o
-
-ccflags-y += -DCONFIG_8188EU -DCONFIG_USB_HCI -DCONFIG_80211N_HT -DCONFIG_80211W
-MAKEFILE_EOF
-
-  # Add to staging Makefile if not already present
-  STAGING_MAKEFILE="${KERNEL_DIR}/drivers/staging/Makefile"
-  if [ -f "$STAGING_MAKEFILE" ]; then
-    if ! grep -q "rtl8188eu" "$STAGING_MAKEFILE"; then
-      echo "obj-\$(CONFIG_STAGING) += rtl8188eu/" >> "$STAGING_MAKEFILE"
+  # Build the module
+  # Pass kernel source and use kernel build system
+  if make -C "$KERNEL_DIR" M="$(pwd)" ARCH="$ARCH" CROSS_COMPILE="" modules 2>&1; then
+    log_info "Driver built successfully"
+    
+    # Create modules directory in kernel output
+    mkdir -p "${KERNEL_DIR}/out/modules"
+    
+    # Copy the built module to modules directory
+    if [ -f "8188eu.ko" ]; then
+      cp 8188eu.ko "${KERNEL_DIR}/out/modules/"
+      log_info "Driver copied to: ${KERNEL_DIR}/out/modules/8188eu.ko"
+    else
+      # Try other possible names
+      for ko_file in *.ko; do
+        if [ -f "$ko_file" ]; then
+          cp "$ko_file" "${KERNEL_DIR}/out/modules/"
+          log_info "Driver copied: $ko_file"
+        fi
+      done
     fi
+  else
+    log_error "Driver build failed"
+    exit 1
   fi
 
-  # Add to staging Kconfig if not already present
-  STAGING_KCONFIG="${KERNEL_DIR}/drivers/staging/Kconfig"
-  if [ -f "$STAGING_KCONFIG" ]; then
-    if ! grep -q "rtl8188eu" "$STAGING_KCONFIG"; then
-      echo "source \"drivers/staging/rtl8188eu/Kconfig\"" >> "$STAGING_KCONFIG"
-    fi
-  fi
-
-  log_info "RTL8188eus driver successfully patched into kernel source"
-  log_info "Driver location: $STAGING_DRIVER_DIR"
+  cd - >/dev/null
 }
 
-# Execute
-log_info "Starting RTL8188eus driver integration..."
-clone_and_patch_driver
-log_info "Done!"
+# Main function
+main() {
+  log_info "Starting RTL8188eus driver integration..."
+  
+  clone_driver
+  build_driver
+  
+  log_info "RTL8188eus driver integration complete!"
+}
+
+# Run main
+main "$@"
