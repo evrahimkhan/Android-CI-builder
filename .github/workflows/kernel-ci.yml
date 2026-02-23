@@ -176,17 +176,17 @@ jobs:
             exit $EXIT_CODE
           fi
 
-      - name: Restore Proton Clang cache
+      - name: Restore GCC cache
         uses: actions/cache@v4
         with:
-          path: clang
-          key: proton-clang-${{ inputs.kernel_source }}-${{ inputs.kernel_branch }}-${{ hashFiles('.github/workflows/**') }}
+          path: gcc
+          key: gcc-arm-${{ inputs.kernel_source }}-${{ inputs.kernel_branch }}-${{ hashFiles('.github/workflows/**') }}
           restore-keys: |
-            proton-clang-${{ inputs.kernel_source }}-${{ inputs.kernel_branch }}-
-            proton-clang-${{ inputs.kernel_source }}-
-            proton-clang-
+            gcc-arm-${{ inputs.kernel_source }}-${{ inputs.kernel_branch }}-
+            gcc-arm-${{ inputs.kernel_source }}-
+            gcc-arm-
 
-      - name: Setup Proton Clang
+      - name: Setup GCC ARM Toolchain
         shell: bash
         run: |
           set -euo pipefail
