@@ -250,7 +250,7 @@ grep -A 20 "NetHunter Kernel Configuration" build.log
 - [Supported Devices List](https://www.kali.org/docs/nethunter/supported-devices/)
 
 ### Understanding the Build Process
-- The workflow will clone your kernel source and build it using Proton Clang
+- The workflow will clone your kernel source and build it using **GCC ARM64** toolchain
 - It will create an AnyKernel flashable ZIP file
 - If the first build fails, it will automatically patch and retry 2nd time
 - NetHunter configurations (if enabled) are applied with automatic kernel version detection

@@ -23,7 +23,7 @@ if ! validate_github_env; then
   exit 1
 fi
 
-export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
+export PATH="${GITHUB_WORKSPACE}/gcc/bin:${PATH}"
 
 printf "SUCCESS=0\n" >> "$GITHUB_ENV"
 
@@ -31,14 +31,16 @@ printf "SUCCESS=0\n" >> "$GITHUB_ENV"
 ccache -M "${CCACHE_SIZE}" || printf "Warning: ccache configuration failed, continuing without cache\n" >&2
 ccache -z || printf "Warning: ccache zero stats failed, continuing\n" >&2
 
-export CC="ccache clang"
-export CXX="ccache clang++"
-export LD=ld.lld
-export AR=llvm-ar
-export NM=llvm-nm
-export OBJCOPY=llvm-objcopy
-export OBJDUMP=llvm-objdump
-export STRIP=llvm-strip
+# Use GCC for building
+export CC="ccache aarch64-linux-gnu-gcc"
+export CXX="ccache aarch64-linux-gnu-g++"
+export LD=aarch64-linux-gnu-ld
+export AR=aarch64-linux-gnu-ar
+export NM=aarch64-linux-gnu-nm
+export OBJCOPY=aarch64-linux-gnu-objcopy
+export OBJDUMP=aarch64-linux-gnu-objdump
+export STRIP=aarch64-linux-gnu-strip
+export CROSS_COMPILE=aarch64-linux-gnu-
 
 # Prevent interactive configuration prompts
 export KCONFIG_NOTIMESTAMP=1
@@ -167,11 +169,11 @@ apply_custom_kconfig_branding() {
   local uname_override="${CFG_UNAME_OVERRIDE_STRING:-}"
   local cc_text_override="${CFG_CC_VERSION_TEXT:-}"
 
-  local clang_ver
-  clang_ver="$(clang --version | head -n1 | tr -d '\n' || true)"
+  local gcc_ver
+  gcc_ver="$(aarch64-linux-gnu-gcc --version | head -n1 | tr -d '\n' || true)"
 
   local cc_text="$cc_text_override"
-  [ -z "$cc_text" ] && cc_text="$clang_ver"
+  [ -z "$cc_text" ] && cc_text="$gcc_ver"
 
   set_kcfg_str LOCALVERSION "$localversion"
   set_kcfg_str DEFAULT_HOSTNAME "$hostname"
@@ -291,7 +293,7 @@ fi
 START="$(date +%s)"
 # Build with proper exit code capture (pipeto returns tee exit code, not make)
 set +o pipefail
-make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 2>&1 | tee -a "$LOG"
+make -j"$(nproc)" O=out 2>&1 | tee -a "$LOG"
 BUILD_RC=${PIPESTATUS[0]}
 set -o pipefail
 
@@ -342,9 +344,9 @@ END="$(date +%s)"
 printf "BUILD_TIME=%s\n" "$((END-START))" >> "$GITHUB_ENV"
 
 KVER="$(make -s kernelversion | tr -d '\n' || true)"
-CLANG_VER="$(clang --version | head -n1 | tr -d '\n' || true)"
+GCC_VER="$(aarch64-linux-gnu-gcc --version | head -n1 | tr -d '\n' || true)"
 printf "KERNEL_VERSION=%s\n" "${KVER:-unknown}" >> "$GITHUB_ENV"
-printf "CLANG_VERSION=%s\n" "${CLANG_VER:-unknown}" >> "$GITHUB_ENV"
+printf "GCC_VERSION=%s\n" "${GCC_VER:-unknown}" >> "$GITHUB_ENV"
 
 # Ensure kernel directory exists in workspace
 if [[ -n "${GITHUB_WORKSPACE:-}" ]] && [[ "$GITHUB_WORKSPACE" =~ ^/ ]]; then

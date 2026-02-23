@@ -176,17 +176,17 @@ jobs:
             exit $EXIT_CODE
           fi
 
-      - name: Restore Proton Clang cache
+      - name: Restore GCC cache
         uses: actions/cache@v4
         with:
-          path: clang
-          key: proton-clang-${{ inputs.kernel_source }}-${{ inputs.kernel_branch }}-${{ hashFiles('.github/workflows/**') }}
+          path: gcc
+          key: gcc-arm64-${{ inputs.kernel_source }}-${{ inputs.kernel_branch }}-${{ hashFiles('.github/workflows/**') }}
           restore-keys: |
-            proton-clang-${{ inputs.kernel_source }}-${{ inputs.kernel_branch }}-
-            proton-clang-${{ inputs.kernel_source }}-
-            proton-clang-
+            gcc-arm64-${{ inputs.kernel_source }}-${{ inputs.kernel_branch }}-
+            gcc-arm64-${{ inputs.kernel_source }}-
+            gcc-arm64-
 
-      - name: Setup Proton Clang
+      - name: Setup GCC ARM64 Toolchain
         shell: bash
         run: |
           set -euo pipefail
@@ -199,15 +199,15 @@ jobs:
           log() { printf "[%s] %s\n" "$(ts)" "$*"; }
           log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
           
-          log_step "Starting: Setup Proton Clang"
-          bash ci/setup_proton_clang.sh 2>&1 | tee -a "$LOG_FILE"
+          log_step "Starting: Setup GCC ARM64 Toolchain"
+          bash ci/setup_gcc.sh 2>&1 | tee -a "$LOG_FILE"
           EXIT_CODE=${PIPESTATUS[0]:-$?}
           
           if [ $EXIT_CODE -eq 0 ]; then
-            log_step "Completed: Setup Proton Clang"
+            log_step "Completed: Setup GCC ARM64 Toolchain"
           else
-            log_step "FAILED: Proton Clang setup (exit code: $EXIT_CODE)"
-            printf "[%s] ERROR: Proton Clang setup failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
+            log_step "FAILED: GCC ARM64 Toolchain setup (exit code: $EXIT_CODE)"
+            printf "[%s] ERROR: GCC ARM64 Toolchain setup failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
             exit $EXIT_CODE
           fi
 
@@ -531,7 +531,7 @@ jobs:
             ## Build Information
             - **Device:** ${{ inputs.device }}
             - **Kernel:** ${{ env.KERNEL_VERSION != '' && env.KERNEL_VERSION || 'unknown' }}
-            - **Clang:** ${{ env.CLANG_VERSION != '' && env.CLANG_VERSION || 'unknown' }}
+            - **GCC:** ${{ env.GCC_VERSION != '' && env.GCC_VERSION || 'unknown' }}
             - **Build Time:** ${{ env.BUILD_TIME != '' && env.BUILD_TIME || '0' }}s
             - **Variant:** ${{ env.ZIP_VARIANT != '' && env.ZIP_VARIANT || 'normal' }}
             - **Git SHA:** ${{ github.sha }}
