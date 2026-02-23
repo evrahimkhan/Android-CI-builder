@@ -27,20 +27,27 @@ export PATH="${GITHUB_WORKSPACE}/gcc/bin:${PATH}"
 
 printf "SUCCESS=0\n" >> "$GITHUB_ENV"
 
-# Configure ccache with shared constant for maximum cache size
-ccache -M "${CCACHE_SIZE}" || printf "Warning: ccache configuration failed, continuing without cache\n" >&2
-ccache -z || printf "Warning: ccache zero stats failed, continuing\n" >&2
+# Detect GCC binary name (try multiple possibilities)
+detect_gcc() {
+  for gcc_name in aarch64-linux-android-gcc aarch64-linux-gnu-gcc aarch64-elf-gcc; do
+    if command -v "$gcc_name" &>/dev/null; then
+      echo "$gcc_name"
+      return 0
+    fi
+  done
+  return 1
+}
 
-# Use GCC for building
-export CC="ccache aarch64-linux-gnu-gcc"
-export CXX="ccache aarch64-linux-gnu-g++"
-export LD=aarch64-linux-gnu-ld
-export AR=aarch64-linux-gnu-ar
-export NM=aarch64-linux-gnu-nm
-export OBJCOPY=aarch64-linux-gnu-objcopy
-export OBJDUMP=aarch64-linux-gnu-objdump
-export STRIP=aarch64-linux-gnu-strip
-export CROSS_COMPILE=aarch64-linux-gnu-
+GCC_BINARY=$(detect_gcc) || { printf "ERROR: GCC binary not found\n" >&2; exit 1; }
+export CROSS_COMPILE="${GITHUB_WORKSPACE}/gcc/bin/aarch64-linux-android-"
+export CC="ccache ${GCC_BINARY}"
+export CXX="ccache ${GCC_BINARY%%-gcc}-g++"
+export LD="${GCC_BINARY%%-gcc}-ld"
+export AR="${GCC_BINARY%%-gcc}-ar"
+export NM="${GCC_BINARY%%-gcc}-nm"
+export OBJCOPY="${GCC_BINARY%%-gcc}-objcopy"
+export OBJDUMP="${GCC_BINARY%%-gcc}-objdump"
+export STRIP="${GCC_BINARY%%-gcc}-strip"
 
 # Prevent interactive configuration prompts
 export KCONFIG_NOTIMESTAMP=1
@@ -170,7 +177,7 @@ apply_custom_kconfig_branding() {
   local cc_text_override="${CFG_CC_VERSION_TEXT:-}"
 
   local gcc_ver
-  gcc_ver="$(aarch64-linux-gnu-gcc --version | head -n1 | tr -d '\n' || true)"
+  gcc_ver="$("$GCC_BINARY" --version | head -n1 | tr -d '\n' || true)"
 
   local cc_text="$cc_text_override"
   [ -z "$cc_text" ] && cc_text="$gcc_ver"
@@ -344,7 +351,7 @@ END="$(date +%s)"
 printf "BUILD_TIME=%s\n" "$((END-START))" >> "$GITHUB_ENV"
 
 KVER="$(make -s kernelversion | tr -d '\n' || true)"
-GCC_VER="$(aarch64-linux-gnu-gcc --version | head -n1 | tr -d '\n' || true)"
+GCC_VER="$("$GCC_BINARY" --version | head -n1 | tr -d '\n' || true)"
 printf "KERNEL_VERSION=%s\n" "${KVER:-unknown}" >> "$GITHUB_ENV"
 printf "GCC_VERSION=%s\n" "${GCC_VER:-unknown}" >> "$GITHUB_ENV"
 

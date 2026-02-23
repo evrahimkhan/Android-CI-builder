@@ -10,8 +10,9 @@ if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
   source "${SCRIPT_DIR}/lib/validate.sh"
 fi
 
-GCC_URL="${1:-https://github.com/mvaisakh/gcc-arm64}"
-GCC_BRANCH="${2:-gcc-master}"
+# Default GCC ARM64 toolchain - using Android GCC from alesaiko
+GCC_URL="${1:-https://github.com/alesaiko/aarch64-linux-android-4.9}"
+GCC_BRANCH="${2:-master}"
 
 # Validate git URL
 if ! validate_git_url "$GCC_URL"; then
@@ -25,11 +26,13 @@ if ! validate_branch_name "$GCC_BRANCH"; then
   exit 1
 fi
 
-# Check if GCC is already installed
-if [ -x gcc/bin/aarch64-linux-gnu-gcc ]; then
-  printf "GCC ARM64 toolchain already exists at gcc/bin/aarch64-linux-gnu-gcc\n"
-  exit 0
-fi
+# Check if GCC is already installed (check multiple possible locations)
+for gcc_bin in gcc/bin/aarch64-linux-android-gcc gcc/bin/aarch64-linux-gnu-gcc; do
+  if [ -x "$gcc_bin" ]; then
+    printf "GCC ARM64 toolchain already exists at %s\n" "$gcc_bin"
+    exit 0
+  fi
+done
 
 # Clone GCC ARM64 toolchain
 printf "Cloning GCC ARM64 toolchain from: %s\n" "$GCC_URL"
@@ -40,13 +43,18 @@ if ! timeout 300 git clone --depth=1 --branch "$GCC_BRANCH" "$GCC_URL" gcc 2>&1;
   exit 1
 fi
 
-# Verify GCC exists
-if [ ! -x gcc/bin/aarch64-linux-gnu-gcc ]; then
-  printf "ERROR: GCC not found at gcc/bin/aarch64-linux-gnu-gcc\n" >&2
-  exit 1
-fi
+# Verify GCC exists (check multiple possible names)
+for gcc_bin in gcc/bin/aarch64-linux-android-gcc gcc/bin/aarch64-linux-gnu-gcc gcc/bin/aarch64-elf-gcc; do
+  if [ -x "$gcc_bin" ]; then
+    # Verify GCC version
+    GCC_VERSION=$("$gcc_bin" --version | head -n1)
+    printf "GCC ARM64 toolchain installed successfully!\n"
+    printf "Version: %s\n" "$GCC_VERSION"
+    printf "Location: %s\n" "$gcc_bin"
+    exit 0
+  fi
+done
 
-# Verify GCC version
-GCC_VERSION=$(gcc/bin/aarch64-linux-gnu-gcc --version | head -n1)
-printf "GCC ARM64 toolchain installed successfully!\n"
-printf "Version: %s\n" "$GCC_VERSION"
+printf "ERROR: GCC not found in expected locations\n" >&2
+ls -la gcc/bin/ || true
+exit 1
