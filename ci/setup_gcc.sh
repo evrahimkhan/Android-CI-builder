@@ -10,9 +10,9 @@ if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
   source "${SCRIPT_DIR}/lib/validate.sh"
 fi
 
-# Default GCC ARM64 toolchain - using GCC from mvaisakh
-GCC_URL="${1:-https://github.com/mvaisakh/gcc-arm64}"
-GCC_BRANCH="${2:-gcc-master}"
+# Default GCC ARM64 toolchain - using rakeshraimca GCC 7.5
+GCC_URL="${1:-https://github.com/rakeshraimca/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-gnu-7.5.0}"
+GCC_BRANCH="${2:-9.0}"
 
 # Validate git URL
 if ! validate_git_url "$GCC_URL"; then
@@ -27,7 +27,7 @@ if ! validate_branch_name "$GCC_BRANCH"; then
 fi
 
 # Check if GCC is already installed (check multiple possible locations)
-for gcc_bin in gcc/bin/aarch64-linux-android-gcc gcc/bin/aarch64-linux-gnu-gcc; do
+for gcc_bin in gcc/bin/aarch64-linux-gnu-gcc gcc/bin/aarch64-linux-android-gcc gcc/bin/aarch64-elf-gcc; do
   if [ -x "$gcc_bin" ]; then
     printf "GCC ARM64 toolchain already exists at %s\n" "$gcc_bin"
     exit 0
@@ -44,7 +44,7 @@ if ! timeout 300 git clone --depth=1 --branch "$GCC_BRANCH" "$GCC_URL" gcc 2>&1;
 fi
 
 # Verify GCC exists (check multiple possible names)
-for gcc_bin in gcc/bin/aarch64-linux-android-gcc gcc/bin/aarch64-linux-gnu-gcc gcc/bin/aarch64-elf-gcc; do
+for gcc_bin in gcc/bin/aarch64-linux-gnu-gcc gcc/bin/aarch64-linux-android-gcc gcc/bin/aarch64-elf-gcc; do
   if [ -x "$gcc_bin" ]; then
     # Verify GCC version
     GCC_VERSION=$("$gcc_bin" --version | head -n1)

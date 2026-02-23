@@ -29,7 +29,7 @@ printf "SUCCESS=0\n" >> "$GITHUB_ENV"
 
 # Detect GCC binary name and derive CROSS_COMPILE prefix
 detect_gcc() {
-  for gcc_name in aarch64-linux-android-gcc aarch64-linux-gnu-gcc aarch64-elf-gcc arm64-gcc; do
+  for gcc_name in aarch64-linux-gnu-gcc aarch64-linux-android-gcc aarch64-elf-gcc arm64-gcc; do
     if command -v "$gcc_name" &>/dev/null; then
       echo "$gcc_name"
       return 0
