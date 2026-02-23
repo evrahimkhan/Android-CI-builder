@@ -24,9 +24,17 @@ if ! validate_github_env; then
 fi
 
 # Use GCC instead of Clang (system-installed via apt-get)
-if [ -d "${GITHUB_WORKSPACE}/gcc/bin" ]; then
-  export PATH="${GITHUB_WORKSPACE}/gcc/bin:${PATH}"
+# Add /usr/bin to PATH to ensure cross-compiler is found
+export PATH="/usr/bin:/bin:${GITHUB_WORKSPACE}/gcc/bin:${PATH}"
+
+# Verify cross-compiler is available
+if ! command -v aarch64-linux-gnu-gcc &> /dev/null; then
+  printf "ERROR: aarch64-linux-gnu-gcc not found in PATH\n" >&2
+  printf "PATH: %s\n" "$PATH" >&2
+  exit 1
 fi
+
+printf "Using cross-compiler: %s\n" "$(which aarch64-linux-gnu-gcc)"
 
 printf "SUCCESS=0\n" >> "$GITHUB_ENV"
 
@@ -54,6 +62,10 @@ if [[ -z "${KBUILD_BUILD_TIMESTAMP:-}" ]]; then
 fi
 export KBUILD_BUILD_USER="android"
 export KBUILD_BUILD_HOST="android-build"
+
+# Set architecture for cross-compilation
+export ARCH="${ARCH:-arm64}"
+export SUBARCH="${SUBARCH:-arm64}"
 
 # Set up paths
 if [[ -n "${GITHUB_WORKSPACE:-}" ]] && [[ "$GITHUB_WORKSPACE" =~ ^/ ]]; then
