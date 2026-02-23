@@ -176,41 +176,6 @@ jobs:
             exit $EXIT_CODE
           fi
 
-      - name: Restore GCC cache
-        uses: actions/cache@v4
-        with:
-          path: gcc
-          key: gcc-arm-${{ inputs.kernel_source }}-${{ inputs.kernel_branch }}-${{ hashFiles('.github/workflows/**') }}
-          restore-keys: |
-            gcc-arm-${{ inputs.kernel_source }}-${{ inputs.kernel_branch }}-
-            gcc-arm-${{ inputs.kernel_source }}-
-            gcc-arm-
-
-      - name: Setup GCC ARM Toolchain
-        shell: bash
-        run: |
-          set -euo pipefail
-          LOG_DIR="${{ github.workspace }}/kernel"
-          LOG_FILE="$LOG_DIR/build.log"
-          ERR_FILE="$LOG_DIR/error.log"
-          mkdir -p "$LOG_DIR"
-          
-          ts() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
-          log() { printf "[%s] %s\n" "$(ts)" "$*"; }
-          log_step() { printf "[%s] [STEP] %s\n" "$(ts)" "$*" | tee -a "$LOG_FILE"; }
-          
-          log_step "Starting: Setup GCC ARM Toolchain"
-          bash ci/setup_gcc.sh 2>&1 | tee -a "$LOG_FILE"
-          EXIT_CODE=${PIPESTATUS[0]:-$?}
-          
-          if [ $EXIT_CODE -eq 0 ]; then
-            log_step "Completed: Setup GCC ARM Toolchain"
-          else
-            log_step "FAILED: GCC ARM Toolchain setup (exit code: $EXIT_CODE)"
-            printf "[%s] ERROR: GCC ARM Toolchain setup failed\n\nFULL OUTPUT:\n%s\n" "$(ts)" "$(cat "$LOG_FILE")" >> "$ERR_FILE"
-            exit $EXIT_CODE
-          fi
-
       - name: Restore ccache
         uses: actions/cache@v4
         with:

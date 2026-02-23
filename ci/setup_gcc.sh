@@ -11,9 +11,8 @@ if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
   source "${SCRIPT_DIR}/lib/validate.sh"
 fi
 
-# GCC version - using latest stable
+# GCC version - using stable release
 GCC_VERSION="${GCC_VERSION:-13.2.rel1}"
-GCC_BASE_URL="https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel"
 
 # Architecture selection
 ARCH="${ARCH:-arm64}"
@@ -32,89 +31,109 @@ GCC_DIR="${WORKSPACE}/gcc"
 log_info() { printf "[gcc-setup] %s\n" "$*"; }
 log_error() { printf "[gcc-setup ERROR] %s\n" "$*" >&2; }
 
-# Get latest GCC version from ARM website
-get_latest_gcc_version() {
-  # Try to get the latest version from the download page
-  # Fall back to known stable version if unable to determine
-  log_info "Checking for latest GCC version..."
+# Download using GitHub mirror (more reliable than ARM website)
+download_gcc() {
+  local gcc_file="$1"
+  local gcc_url="$2"
   
-  # Known stable versions - update as needed
-  local known_versions=("14.2.rel1" "13.2.rel1" "12.3.rel1" "12.2.rel1")
+  log_info "Downloading: $gcc_file"
   
-  # For now, return the configured version
-  echo "$GCC_VERSION"
+  if ! curl -L --retry 3 --retry-delay 5 -o "$gcc_file" "$gcc_url" 2>&1; then
+    log_error "Download failed: $gcc_url"
+    return 1
+  fi
+  
+  # Check if file is valid (not HTML redirect)
+  if head -c 100 "$gcc_file" | grep -q "<!DOCTYPE\|<html\|<head"; then
+    log_error "Downloaded file is HTML (redirect or error page)"
+    rm -f "$gcc_file"
+    return 1
+  fi
+  
+  log_info "Download complete"
+  return 0
 }
 
-# Download and extract ARM64 GCC
+# Download and extract ARM64 GCC from GitHub mirror
 setup_gcc_arm64() {
   local gcc_file="arm-gnu-toolchain-${GCC_VERSION}-x86_64-aarch64-none-linux-gnueabi.tar.xz"
-  local gcc_url="${GCC_BASE_URL}/${gcc_file}"
+  
+  # Try multiple sources in order of preference
+  local sources=(
+    "https://github.com/Archomeda/arm-gnu-toolchain/releases/download/${GCC_VERSION}/${gcc_file}"
+    "https://github.com/mvaisakh/gcc-arm64/releases/download/gcc-13.2/arm-gnu-toolchain-13.2.rel1-x86_64-aarch64-none-linux-gnueabi.tar.xz"
+  )
   
   log_info "Setting up ARM64 GCC..."
-  log_info "URL: $gcc_url"
   
   if [ -d "${GCC_DIR}/aarch64-none-linux-gnueabi" ]; then
     log_info "ARM64 GCC already exists, skipping download"
     return 0
   fi
   
-  # Download GCC
-  if ! curl -L --retry 3 --retry-delay 5 -o "${gcc_file}" "$gcc_url" 2>&1; then
-    log_error "Failed to download ARM64 GCC"
-    log_error "URL: $gcc_url"
-    exit 1
-  fi
+  # Try each source
+  for gcc_url in "${sources[@]}"; do
+    log_info "Trying: $gcc_url"
+    if download_gcc "$gcc_file" "$gcc_url"; then
+      log_info "Extracting ARM64 GCC..."
+      if tar -xf "$gcc_file"; then
+        # Find and move the extracted directory
+        local extracted_dir
+        extracted_dir=$(find . -maxdepth 1 -type d -name "arm-gnu-toolchain-*" | head -1)
+        if [ -n "$extracted_dir" ]; then
+          mv "$extracted_dir" "${GCC_DIR}/aarch64-none-linux-gnueabi"
+          rm -f "$gcc_file"
+          log_info "ARM64 GCC setup complete"
+          return 0
+        fi
+      fi
+    fi
+    rm -f "$gcc_file" 2>/dev/null || true
+  done
   
-  # Extract GCC
-  log_info "Extracting ARM64 GCC..."
-  tar -xf "$gcc_file" || { log_error "Failed to extract ARM64 GCC"; exit 1; }
-  
-  # Move to gcc directory
-  mv "arm-gnu-toolchain-${GCC_VERSION}-x86_64-aarch64-none-linux-gnueabi" "${GCC_DIR}/aarch64-none-linux-gnueabi" || {
-    log_error "Failed to move ARM64 GCC to target directory"
-    exit 1
-  }
-  
-  # Clean up
-  rm -f "$gcc_file"
-  
-  log_info "ARM64 GCC setup complete"
+  log_error "Failed to download ARM64 GCC from all sources"
+  return 1
 }
 
-# Download and extract ARM32 GCC
+# Download and extract ARM32 GCC from GitHub mirror
 setup_gcc_arm32() {
   local gcc_file="arm-gnu-toolchain-${GCC_VERSION}-x86_64-arm-none-linux-gnueabihf.tar.xz"
-  local gcc_url="${GCC_BASE_URL}/${gcc_file}"
+  
+  # Try multiple sources in order of preference  
+  local sources=(
+    "https://github.com/Archomeda/arm-gnu-toolchain/releases/download/${GCC_VERSION}/${gcc_file}"
+    "https://github.com/mvaisakh/gcc-arm64/releases/download/gcc-13.2/arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-linux-gnueabihf.tar.xz"
+  )
   
   log_info "Setting up ARM32 GCC..."
-  log_info "URL: $gcc_url"
   
   if [ -d "${GCC_DIR}/arm-none-linux-gnueabihf" ]; then
     log_info "ARM32 GCC already exists, skipping download"
     return 0
   fi
   
-  # Download GCC
-  if ! curl -L --retry 3 --retry-delay 5 -o "${gcc_file}" "$gcc_url" 2>&1; then
-    log_error "Failed to download ARM32 GCC"
-    log_error "URL: $gcc_url"
-    exit 1
-  fi
+  # Try each source
+  for gcc_url in "${sources[@]}"; do
+    log_info "Trying: $gcc_url"
+    if download_gcc "$gcc_file" "$gcc_url"; then
+      log_info "Extracting ARM32 GCC..."
+      if tar -xf "$gcc_file"; then
+        # Find and move the extracted directory
+        local extracted_dir
+        extracted_dir=$(find . -maxdepth 1 -type d -name "arm-gnu-toolchain-*" | head -1)
+        if [ -n "$extracted_dir" ]; then
+          mv "$extracted_dir" "${GCC_DIR}/arm-none-linux-gnueabihf"
+          rm -f "$gcc_file"
+          log_info "ARM32 GCC setup complete"
+          return 0
+        fi
+      fi
+    fi
+    rm -f "$gcc_file" 2>/dev/null || true
+  done
   
-  # Extract GCC
-  log_info "Extracting ARM32 GCC..."
-  tar -xf "$gcc_file" || { log_error "Failed to extract ARM32 GCC"; exit 1; }
-  
-  # Move to gcc directory
-  mv "arm-gnu-toolchain-${GCC_VERSION}-x86_64-arm-none-linux-gnueabihf" "${GCC_DIR}/arm-none-linux-gnueabihf" || {
-    log_error "Failed to move ARM32 GCC to target directory"
-    exit 1
-  }
-  
-  # Clean up
-  rm -f "$gcc_file"
-  
-  log_info "ARM32 GCC setup complete"
+  log_error "Failed to download ARM32 GCC from all sources"
+  return 1
 }
 
 # Setup symlinks for easier usage

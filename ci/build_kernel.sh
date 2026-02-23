@@ -23,8 +23,10 @@ if ! validate_github_env; then
   exit 1
 fi
 
-# Use GCC instead of Clang
-export PATH="${GITHUB_WORKSPACE}/gcc/bin:${PATH}"
+# Use GCC instead of Clang (system-installed via apt-get)
+if [ -d "${GITHUB_WORKSPACE}/gcc/bin" ]; then
+  export PATH="${GITHUB_WORKSPACE}/gcc/bin:${PATH}"
+fi
 
 printf "SUCCESS=0\n" >> "$GITHUB_ENV"
 
