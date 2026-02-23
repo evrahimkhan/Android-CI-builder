@@ -10,9 +10,9 @@ if [[ -f "${SCRIPT_DIR}/lib/validate.sh" ]]; then
   source "${SCRIPT_DIR}/lib/validate.sh"
 fi
 
-# Default GCC ARM64 toolchain - using Android GCC from alesaiko
-GCC_URL="${1:-https://github.com/alesaiko/aarch64-linux-android-4.9}"
-GCC_BRANCH="${2:-master}"
+# Default GCC ARM64 toolchain - using GCC from mvaisakh
+GCC_URL="${1:-https://github.com/mvaisakh/gcc-arm64}"
+GCC_BRANCH="${2:-gcc-master}"
 
 # Validate git URL
 if ! validate_git_url "$GCC_URL"; then

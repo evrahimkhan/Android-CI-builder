@@ -27,9 +27,9 @@ export PATH="${GITHUB_WORKSPACE}/gcc/bin:${PATH}"
 
 printf "SUCCESS=0\n" >> "$GITHUB_ENV"
 
-# Detect GCC binary name (try multiple possibilities)
+# Detect GCC binary name and derive CROSS_COMPILE prefix
 detect_gcc() {
-  for gcc_name in aarch64-linux-android-gcc aarch64-linux-gnu-gcc aarch64-elf-gcc; do
+  for gcc_name in aarch64-linux-android-gcc aarch64-linux-gnu-gcc aarch64-elf-gcc arm64-gcc; do
     if command -v "$gcc_name" &>/dev/null; then
       echo "$gcc_name"
       return 0
@@ -39,15 +39,19 @@ detect_gcc() {
 }
 
 GCC_BINARY=$(detect_gcc) || { printf "ERROR: GCC binary not found\n" >&2; exit 1; }
-export CROSS_COMPILE="${GITHUB_WORKSPACE}/gcc/bin/aarch64-linux-android-"
+
+# Derive CROSS_COMPILE prefix from GCC binary name
+# e.g., aarch64-elf-gcc -> aarch64-elf-
+GCC_PREFIX="${GCC_BINARY%-gcc}"
+export CROSS_COMPILE="${GITHUB_WORKSPACE}/gcc/bin/${GCC_PREFIX}-"
 export CC="ccache ${GCC_BINARY}"
-export CXX="ccache ${GCC_BINARY%%-gcc}-g++"
-export LD="${GCC_BINARY%%-gcc}-ld"
-export AR="${GCC_BINARY%%-gcc}-ar"
-export NM="${GCC_BINARY%%-gcc}-nm"
-export OBJCOPY="${GCC_BINARY%%-gcc}-objcopy"
-export OBJDUMP="${GCC_BINARY%%-gcc}-objdump"
-export STRIP="${GCC_BINARY%%-gcc}-strip"
+export CXX="ccache ${GCC_PREFIX}-g++"
+export LD="${GCC_PREFIX}-ld"
+export AR="${GCC_PREFIX}-ar"
+export NM="${GCC_PREFIX}-nm"
+export OBJCOPY="${GCC_PREFIX}-objcopy"
+export OBJDUMP="${GCC_PREFIX}-objdump"
+export STRIP="${GCC_PREFIX}-strip"
 
 # Prevent interactive configuration prompts
 export KCONFIG_NOTIMESTAMP=1
