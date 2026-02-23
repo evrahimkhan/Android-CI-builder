@@ -44,6 +44,8 @@ This project builds Android kernels and creates AnyKernel flashable ZIP files fo
     - **NetHunter configuration level**: Choose "basic" or "full" (optional, default: basic)
 5. Click "Run workflow" to start the build process
 
+**Note:** This project uses **GNU ARM GCC** as the default compiler (instead of Clang).
+
 ### NetHunter Kernel Configuration
 
 Enable NetHunter kernel configuration to build kernels compatible with Kali NetHunter penetration testing platform.
@@ -250,7 +252,7 @@ grep -A 20 "NetHunter Kernel Configuration" build.log
 - [Supported Devices List](https://www.kali.org/docs/nethunter/supported-devices/)
 
 ### Understanding the Build Process
-- The workflow will clone your kernel source and build it using **GCC ARM64** toolchain
+- The workflow will clone your kernel source and build it using **GCC ARM Toolchain**
 - It will create an AnyKernel flashable ZIP file
 - If the first build fails, it will automatically patch and retry 2nd time
 - NetHunter configurations (if enabled) are applied with automatic kernel version detection

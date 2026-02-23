@@ -23,35 +23,25 @@ if ! validate_github_env; then
   exit 1
 fi
 
+# Use GCC instead of Clang
 export PATH="${GITHUB_WORKSPACE}/gcc/bin:${PATH}"
 
 printf "SUCCESS=0\n" >> "$GITHUB_ENV"
 
-# Detect GCC binary name and derive CROSS_COMPILE prefix
-detect_gcc() {
-  for gcc_name in aarch64-linux-gnu-gcc aarch64-linux-android-gcc aarch64-elf-gcc arm64-gcc; do
-    if command -v "$gcc_name" &>/dev/null; then
-      echo "$gcc_name"
-      return 0
-    fi
-  done
-  return 1
-}
+# Configure ccache with shared constant for maximum cache size
+ccache -M "${CCACHE_SIZE}" || printf "Warning: ccache configuration failed, continuing without cache\n" >&2
+ccache -z || printf "Warning: ccache zero stats failed, continuing\n" >&2
 
-GCC_BINARY=$(detect_gcc) || { printf "ERROR: GCC binary not found\n" >&2; exit 1; }
-
-# Derive CROSS_COMPILE prefix from GCC binary name
-# e.g., aarch64-elf-gcc -> aarch64-elf-
-GCC_PREFIX="${GCC_BINARY%-gcc}"
-export CROSS_COMPILE="${GITHUB_WORKSPACE}/gcc/bin/${GCC_PREFIX}-"
-export CC="ccache ${GCC_BINARY}"
-export CXX="ccache ${GCC_PREFIX}-g++"
-export LD="${GCC_PREFIX}-ld"
-export AR="${GCC_PREFIX}-ar"
-export NM="${GCC_PREFIX}-nm"
-export OBJCOPY="${GCC_PREFIX}-objcopy"
-export OBJDUMP="${GCC_PREFIX}-objdump"
-export STRIP="${GCC_PREFIX}-strip"
+# GCC compiler settings for ARM64
+export CC="ccache aarch64-linux-gnu-gcc"
+export CXX="ccache aarch64-linux-gnu-g++"
+export CROSS_COMPILE="aarch64-linux-gnu-"
+export LD="aarch64-linux-gnu-ld"
+export AR="aarch64-linux-gnu-ar"
+export NM="aarch64-linux-gnu-nm"
+export OBJCOPY="aarch64-linux-gnu-objcopy"
+export OBJDUMP="aarch64-linux-gnu-objdump"
+export STRIP="aarch64-linux-gnu-strip"
 
 # Prevent interactive configuration prompts
 export KCONFIG_NOTIMESTAMP=1
@@ -180,8 +170,9 @@ apply_custom_kconfig_branding() {
   local uname_override="${CFG_UNAME_OVERRIDE_STRING:-}"
   local cc_text_override="${CFG_CC_VERSION_TEXT:-}"
 
+  # Get GCC version instead of clang
   local gcc_ver
-  gcc_ver="$("$GCC_BINARY" --version | head -n1 | tr -d '\n' || true)"
+  gcc_ver="$(aarch64-linux-gnu-gcc --version | head -n1 | tr -d '\n' || true)"
 
   local cc_text="$cc_text_override"
   [ -z "$cc_text" ] && cc_text="$gcc_ver"
@@ -303,6 +294,7 @@ fi
 
 START="$(date +%s)"
 # Build with proper exit code capture (pipeto returns tee exit code, not make)
+# Using GCC instead of Clang - no LLVM flags needed
 set +o pipefail
 make -j"$(nproc)" O=out 2>&1 | tee -a "$LOG"
 BUILD_RC=${PIPESTATUS[0]}
@@ -355,7 +347,7 @@ END="$(date +%s)"
 printf "BUILD_TIME=%s\n" "$((END-START))" >> "$GITHUB_ENV"
 
 KVER="$(make -s kernelversion | tr -d '\n' || true)"
-GCC_VER="$("$GCC_BINARY" --version | head -n1 | tr -d '\n' || true)"
+GCC_VER="$(aarch64-linux-gnu-gcc --version | head -n1 | tr -d '\n' || true)"
 printf "KERNEL_VERSION=%s\n" "${KVER:-unknown}" >> "$GITHUB_ENV"
 printf "GCC_VERSION=%s\n" "${GCC_VER:-unknown}" >> "$GITHUB_ENV"
 
