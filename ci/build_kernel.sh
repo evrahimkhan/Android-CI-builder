@@ -53,6 +53,9 @@ export OBJCOPY="aarch64-linux-gnu-objcopy"
 export OBJDUMP="aarch64-linux-gnu-objdump"
 export STRIP="aarch64-linux-gnu-strip"
 
+# Disable treating warnings as errors for GCC compatibility
+export KCFLAGS="-Wno-error"
+
 # Prevent interactive configuration prompts
 export KCONFIG_NOTIMESTAMP=1
 # Use ISO 8601 timestamp for reproducibility, fallback to build start time
@@ -310,6 +313,10 @@ if [ -f "${KERNEL_DIR}/out/.config" ]; then
   # Also set VDSO for the kernel
   echo "CONFIG_VDSO32=y" >> "${KERNEL_DIR}/out/.config" 2>/dev/null || true
   echo "# CONFIG_VDSO32 is not set" >> "${KERNEL_DIR}/out/.config" 2>/dev/null || true
+  
+  # Disable WERROR (treat warnings as errors) for GCC compatibility
+  printf "Disabling CONFIG_WERROR for GCC cross-compilation...\n" | tee -a "$LOG"
+  sed -i 's/^CONFIG_WERROR=y/# CONFIG_WERROR is not set/' "${KERNEL_DIR}/out/.config" 2>/dev/null || true
 fi
 
 # Final olddefconfig to ensure all configurations are properly set
