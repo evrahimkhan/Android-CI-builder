@@ -112,7 +112,7 @@ run_oldconfig() {
   set +o pipefail
   
   # Capture exit code properly
-  yes "" | make O=out oldconfig 2>&1 | tee -a "$LOG"
+  yes "" | make O=out LLVM=0 oldconfig 2>&1 | tee -a "$LOG"
   local rc=${PIPESTATUS[0]:-$?}
   
   # Restore pipefail state
@@ -215,24 +215,24 @@ apply_custom_kconfig_branding() {
   fi
 
   set_kcfg_bool LOCALVERSION_AUTO n
-  if ! make O=out olddefconfig 2>&1 | tee -a "$LOG"; then
-    # If olddefconfig fails, use silentoldconfig to avoid interactive prompts
-    if ! make O=out silentoldconfig 2>&1 | tee -a "$LOG"; then
+if ! make O=out LLVM=0 olddefconfig 2>&1 | tee -a "$LOG"; then
+  printf "Warning: Final olddefconfig failed, trying silentoldconfig...\n" | tee -a "$LOG"
+  if ! make O=out LLVM=0 silentoldconfig 2>&1 | tee -a "$LOG"; then
       # Fallback to oldconfig with yes "" if both fail
-      yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a "$LOG" || true
+      yes "" 2>/dev/null | make O=out LLVM=0 oldconfig 2>&1 | tee -a "$LOG" || true
     fi
   fi
 }
 
 # Apply defconfig with proper error handling to avoid interactive prompts
 printf "===== [$(date +%Y-%m-%d\ %H:%M:%S)] Running defconfig: make O=out %s =====\n" "$DEFCONFIG" | tee -a "$LOG"
-if ! make O=out "$DEFCONFIG" 2>&1 | tee -a "$LOG"; then
+if ! make O=out LLVM=0 "$DEFCONFIG" 2>&1 | tee -a "$LOG"; then
   printf "Warning: Initial defconfig failed, trying olddefconfig...\n" | tee -a "$LOG"
-  if ! make O=out olddefconfig 2>&1 | tee -a "$LOG"; then
+  if ! make O=out LLVM=0 olddefconfig 2>&1 | tee -a "$LOG"; then
     printf "Warning: olddefconfig failed, trying silentoldconfig...\n" | tee -a "$LOG"
-    if ! make O=out silentoldconfig 2>&1 | tee -a "$LOG"; then
+    if ! make O=out LLVM=0 silentoldconfig 2>&1 | tee -a "$LOG"; then
       printf "Warning: silentoldconfig failed, using oldconfig with defaults...\n" | tee -a "$LOG"
-      yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a "$LOG" || true
+      yes "" 2>/dev/null | make O=out LLVM=0 oldconfig 2>&1 | tee -a "$LOG" || true
     fi
   fi
 fi
@@ -290,9 +290,9 @@ apply_nethunter_config() {
     bash "${GITHUB_WORKSPACE}/ci/apply_nethunter_config.sh" 2>&1 | tee -a "$LOG"
     
     printf "\nResolving NetHunter configuration dependencies...\n" | tee -a "$LOG"
-    if ! make O=out olddefconfig 2>&1 | tee -a "$LOG"; then
-      if ! make O=out silentoldconfig 2>&1 | tee -a "$LOG"; then
-        yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a "$LOG" || true
+    if ! make O=out LLVM=0 olddefconfig 2>&1 | tee -a "$LOG"; then
+      if ! make O=out LLVM=0 silentoldconfig 2>&1 | tee -a "$LOG"; then
+      yes "" 2>/dev/null | make O=out LLVM=0 oldconfig 2>&1 | tee -a "$LOG" || true
       fi
     fi
   else
