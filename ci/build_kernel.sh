@@ -56,6 +56,10 @@ export STRIP="aarch64-linux-gnu-strip"
 # Disable treating warnings as errors for GCC compatibility
 export KCFLAGS="-Wno-error"
 
+# Disable LLVM-specific linker options for GCC
+export LD_FLAGS=""
+export LD=aarch64-linux-gnu-ld
+
 # Prevent interactive configuration prompts
 export KCONFIG_NOTIMESTAMP=1
 # Use ISO 8601 timestamp for reproducibility, fallback to build start time
@@ -317,6 +321,10 @@ if [ -f "${KERNEL_DIR}/out/.config" ]; then
   # Disable WERROR (treat warnings as errors) for GCC compatibility
   printf "Disabling CONFIG_WERROR for GCC cross-compilation...\n" | tee -a "$LOG"
   sed -i 's/^CONFIG_WERROR=y/# CONFIG_WERROR is not set/' "${KERNEL_DIR}/out/.config" 2>/dev/null || true
+  
+  # Disable LD_IS_LLD (LLVM linker) for GCC compatibility
+  printf "Disabling CONFIG_LD_IS_LLD for GCC cross-compilation...\n" | tee -a "$LOG"
+  sed -i 's/^CONFIG_LD_IS_LLD=y/# CONFIG_LD_IS_LLD is not set/' "${KERNEL_DIR}/out/.config" 2>/dev/null || true
 fi
 
 # Final olddefconfig to ensure all configurations are properly set
