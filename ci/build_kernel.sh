@@ -67,6 +67,9 @@ export KBUILD_BUILD_HOST="android-build"
 export ARCH="${ARCH:-arm64}"
 export SUBARCH="${SUBARCH:-arm64}"
 
+# Set CROSS_COMPILE_COMPAT for 32-bit ARM (VDSO32)
+export CROSS_COMPILE_COMPAT="arm-linux-gnueabihf-"
+
 # Set up paths
 if [[ -n "${GITHUB_WORKSPACE:-}" ]] && [[ "$GITHUB_WORKSPACE" =~ ^/ ]]; then
   BUILD_LOG_PATH="${GITHUB_WORKSPACE}/kernel/build.log"
@@ -300,11 +303,13 @@ apply_nethunter_config
 # This disables VDSO32 for ARM64 builds using GCC
 printf "\n===== [$(date +%Y-%m-%d\ %H:%M:%S)] Configuring VDSO for GCC cross-compilation =====\n"
 if [ -f "${KERNEL_DIR}/out/.config" ]; then
-  # Check if CONFIG_VDSO32 is set
-  if grep -q "^CONFIG_VDSO32=y" "${KERNEL_DIR}/out/.config" 2>/dev/null; then
-    printf "Disabling CONFIG_VDSO32 for GCC cross-compilation...\n" | tee -a "$LOG"
-    sed -i 's/^CONFIG_VDSO32=y/# CONFIG_VDSO32 is not set/' "${KERNEL_DIR}/out/.config"
-  fi
+  # Disable VDSO32 for GCC cross-compilation (use various possible config names)
+  printf "Disabling CONFIG_VDSO32 for GCC cross-compilation...\n" | tee -a "$LOG"
+  sed -i 's/^CONFIG_VDSO32=.*/# CONFIG_VDSO32 is not set/' "${KERNEL_DIR}/out/.config" 2>/dev/null || true
+  sed -i 's/^CONFIG_COMPAT_VDSO=.*/CONFIG_COMPAT_VDSO=n/' "${KERNEL_DIR}/out/.config" 2>/dev/null || true
+  # Also set VDSO for the kernel
+  echo "CONFIG_VDSO32=y" >> "${KERNEL_DIR}/out/.config" 2>/dev/null || true
+  echo "# CONFIG_VDSO32 is not set" >> "${KERNEL_DIR}/out/.config" 2>/dev/null || true
 fi
 
 # Final olddefconfig to ensure all configurations are properly set
