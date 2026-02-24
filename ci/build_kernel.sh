@@ -295,6 +295,18 @@ apply_nethunter_config() {
 
 apply_nethunter_config
 
+# Fix VDSO32 for GCC cross-compilation
+# VDSO32 requires special 32-bit toolchain support which may not be available
+# This disables VDSO32 for ARM64 builds using GCC
+printf "\n===== [$(date +%Y-%m-%d\ %H:%M:%S)] Configuring VDSO for GCC cross-compilation =====\n"
+if [ -f "${KERNEL_DIR}/out/.config" ]; then
+  # Check if CONFIG_VDSO32 is set
+  if grep -q "^CONFIG_VDSO32=y" "${KERNEL_DIR}/out/.config" 2>/dev/null; then
+    printf "Disabling CONFIG_VDSO32 for GCC cross-compilation...\n" | tee -a "$LOG"
+    sed -i 's/^CONFIG_VDSO32=y/# CONFIG_VDSO32 is not set/' "${KERNEL_DIR}/out/.config"
+  fi
+fi
+
 # Final olddefconfig to ensure all configurations are properly set
 printf "\n===== [$(date +%Y-%m-%d\ %H:%M:%S)] Running final olddefconfig =====\n"
 if ! make O=out olddefconfig 2>&1 | tee -a "$LOG"; then
