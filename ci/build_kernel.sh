@@ -57,8 +57,10 @@ export STRIP="aarch64-linux-gnu-strip"
 export KCFLAGS="-Wno-error"
 
 # Disable LLVM-specific linker options for GCC
-export LD_FLAGS=""
+# LLVM=0 tells kernel to use standard GNU toolchain
+export LLVM=0
 export LD=aarch64-linux-gnu-ld
+export LD_FLAGS=""
 
 # Prevent interactive configuration prompts
 export KCONFIG_NOTIMESTAMP=1
@@ -329,20 +331,20 @@ fi
 
 # Final olddefconfig to ensure all configurations are properly set
 printf "\n===== [$(date +%Y-%m-%d\ %H:%M:%S)] Running final olddefconfig =====\n"
-if ! make O=out olddefconfig 2>&1 | tee -a "$LOG"; then
+if ! make O=out LLVM=0 olddefconfig 2>&1 | tee -a "$LOG"; then
   printf "Warning: Final olddefconfig failed, trying silentoldconfig...\n" | tee -a "$LOG"
-  if ! make O=out silentoldconfig 2>&1 | tee -a "$LOG"; then
+  if ! make O=out LLVM=0 silentoldconfig 2>&1 | tee -a "$LOG"; then
     printf "Warning: silentoldconfig failed, using oldconfig with defaults...\n" | tee -a "$LOG"
-    yes "" 2>/dev/null | make O=out oldconfig 2>&1 | tee -a "$LOG" || true
+    yes "" 2>/dev/null | make O=out LLVM=0 oldconfig 2>&1 | tee -a "$LOG" || true
   fi
 fi
 
 
 START="$(date +%s)"
 # Build with proper exit code capture (pipeto returns tee exit code, not make)
-# Using GCC instead of Clang - no LLVM flags needed
+# Using GCC instead of Clang - use LLVM=0 to disable LLVM-specific options
 set +o pipefail
-make -j"$(nproc)" O=out 2>&1 | tee -a "$LOG"
+make -j"$(nproc)" O=out LLVM=0 2>&1 | tee -a "$LOG"
 BUILD_RC=${PIPESTATUS[0]}
 set -o pipefail
 
