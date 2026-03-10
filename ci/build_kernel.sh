@@ -59,8 +59,20 @@ export KCFLAGS="-Wno-error"
 # Disable LLVM-specific linker options for GCC
 # LLVM=0 tells kernel to use standard GNU toolchain
 export LLVM=0
+export LLVM_IAS=0
 export LD=aarch64-linux-gnu-ld
 export LD_FLAGS=""
+
+# Create a wrapper for ld.lld that uses GCC's ld
+mkdir -p /usr/local/bin
+if [ ! -f /usr/local/bin/ld.lld ]; then
+  cat > /usr/local/bin/ld.lld << 'EOF'
+#!/bin/bash
+exec /usr/bin/ld "$@"
+EOF
+  chmod +x /usr/local/bin/ld.lld
+fi
+export PATH="/usr/local/bin:$PATH"
 
 # Prevent interactive configuration prompts
 export KCONFIG_NOTIMESTAMP=1
